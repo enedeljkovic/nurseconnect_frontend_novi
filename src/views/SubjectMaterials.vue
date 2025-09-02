@@ -42,6 +42,8 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useRoute, useRouter } from 'vue-router'
+  import { api } from '../lib/api.js'
+
 
 const API = import.meta.env.VITE_API_URL   
 const route = useRoute()
@@ -191,6 +193,7 @@ onMounted(() => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
