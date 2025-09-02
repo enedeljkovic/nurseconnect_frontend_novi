@@ -53,12 +53,15 @@ function normalizeSubject(s) {
   return s.replace(/\s*\(.*?\)\s*$/i, '').trim();
 }
 
+
+const API = import.meta.env.VITE_API_URL || 'https://nurseconnect-backend-novi.onrender.com';
+
 export default {
   name: 'AddMaterial',
   setup() {
     const route = useRoute();
     const router = useRouter();
-    
+
     const predmetRaw = route.query.predmet || '';
     const predmet = normalizeSubject(predmetRaw);
 
@@ -66,35 +69,40 @@ export default {
     const opis = ref('');
     const imageUrl = ref('');
     const file = ref(null);
-    const razred = ref(''); 
+    const razred = ref('');
 
     const handleFile = (e) => {
-      file.value = e.target.files[0];
+      file.value = e.target.files?.[0] || null;
     };
 
     const submitMaterial = async () => {
       try {
         let fileUrl = '';
 
+    
         if (file.value) {
           const formData = new FormData();
           formData.append('file', file.value);
-          
-          const res = await axios.post('/upload', formData);
-          fileUrl = res.data.fileUrl; 
+
+          const res = await axios.post(`${API}/upload`, formData);
+          fileUrl = res.data?.fileUrl || '';
         }
 
-        await axios.post('/materials', {
+  
+        await axios.post(`${API}/materials`, {
           naziv: naziv.value,
           opis: opis.value,
           imageUrl: imageUrl.value || null,
           fileUrl: fileUrl || null,
-          subject: predmet,         
+          subject: predmet,
           razred: razred.value || null
         });
 
-       
-        router.push({ name: 'SubjectMaterials', params: { predmet: encodeURIComponent(predmet) } });
+    
+        router.push({
+          name: 'SubjectMaterials',
+          params: { predmet: encodeURIComponent(predmet) }
+        });
       } catch (error) {
         console.error('Greška pri dodavanju materijala:', error);
         alert('❌ Greška pri dodavanju materijala.');
@@ -114,7 +122,6 @@ export default {
   }
 };
 </script>
-
 
 
 
@@ -162,4 +169,5 @@ export default {
   color: #444;
 }
 </style>
+
 
