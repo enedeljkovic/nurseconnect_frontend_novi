@@ -59,17 +59,22 @@ const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
 async function fetchMaterijali() {
+  const res = await axios.get(`${import.meta.env.VITE_API_URL}/materials`, {
+    headers: { 'Cache-Control': 'no-cache' }, 
+    params: { t: Date.now() }                 
+  })
 
-  const res = await axios.get('/materials')
-  const subj = predmet.value
+  
+  let list = res.data.filter(m => m.subject === predmet.value)
 
-  const bySubject = res.data.filter(m => normalizeSubject(m.subject) === subj)
+ 
+  if (!isProfesor.value && user?.razred) {
+    list = list.filter(m => m.razred === user.razred)
+  }
 
-
-  materijali.value = isProfesor.value
-    ? bySubject
-    : bySubject.filter(m => m.razred === user.razred)
+  materijali.value = list
 }
+
 
 async function checkDozvola() {
   if (!isProfesor.value) return
@@ -207,4 +212,5 @@ watch(() => route.params.predmet, (p) => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
