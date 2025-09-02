@@ -44,7 +44,8 @@
 <script>
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '@/lib/api'   // <<-- novo
+import { api } from '../lib/api.js'
+
 
 function normalizeSubject(s) {
   if (!s) return s
@@ -144,6 +145,7 @@ export default {
   color: #444;
 }
 </style>
+
 
 
 
