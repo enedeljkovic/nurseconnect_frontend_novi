@@ -39,56 +39,41 @@
 
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useRoute, useRouter } from 'vue-router'
 
-function normalizeSubject(s) {
-  if (!s) return s;
-  try { s = decodeURIComponent(s); } catch {}
-  return s.replace(/\s*\(.*?\)\s*$/i, '').trim();
-}
-
+const API = import.meta.env.VITE_API_URL   
 const route = useRoute()
 const router = useRouter()
-
-const predmet    = ref(normalizeSubject(route.params.predmet))
+const predmet    = ref(decodeURIComponent(route.params.predmet))
 const materijali = ref([])
 const user       = JSON.parse(localStorage.getItem('user') || '{}')
-const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
+const isProfesor = ref(localStorage.getItem('isProfesor')==='true')
 const predajePredmet = ref(false)
 
 async function fetchMaterijali() {
-  const res = await axios.get(`${import.meta.env.VITE_API_URL}/materials`, {
-    headers: { 'Cache-Control': 'no-cache' }, 
-    params: { t: Date.now() }                 
+ 
+  const res = await axios.get(`${API}/materials/subject/${encodeURIComponent(predmet.value)}`, {
+    params: { t: Date.now() } 
   })
 
-  
-  let list = res.data.filter(m => m.subject === predmet.value)
-
  
-  if (!isProfesor.value && user?.razred) {
-    list = list.filter(m => m.razred === user.razred)
-  }
-
-  materijali.value = list
+  materijali.value = isProfesor.value
+    ? res.data
+    : res.data.filter(m => m.razred === user.razred)
 }
-
 
 async function checkDozvola() {
   if (!isProfesor.value) return
-  const res = await axios.get(`/profesori/${user.id}`)
-  predajePredmet.value = (res.data.Subjects || []).map(s => s.naziv).some(n => normalizeSubject(n) === predmet.value)
+  const res = await axios.get(`${API}/profesori/${user.id}`)
+  predajePredmet.value = res.data.Subjects.map(s => s.naziv).includes(predmet.value)
 }
 
 async function downloadAndMarkRead(m) {
   try {
-   
-    if (!isProfesor.value) {
-      await axios.post(`/api/v1/progress/${user.id}/read/${m.id}`)
-      window.dispatchEvent(new CustomEvent('progress-updated'))
-    }
+    await axios.post(`${API}/api/v1/progress/${user.id}/read/${m.id}`)
+    window.dispatchEvent(new CustomEvent('progress-updated'))
     window.open(m.fileUrl, '_blank')
   } catch (err) {
     console.error('Greška pri označavanju pročitanog materijala:', err)
@@ -96,21 +81,15 @@ async function downloadAndMarkRead(m) {
 }
 
 function goToAddMaterial() {
-
-  router.push({ name: 'AddMaterial', query: { predmet: encodeURIComponent(predmet.value) } })
+  router.push({ name:'AddMaterial', query:{ predmet: predmet.value }})
 }
 
 onMounted(() => {
   fetchMaterijali().catch(console.error)
   checkDozvola().catch(console.error)
 })
-
-
-watch(() => route.params.predmet, (p) => {
-  predmet.value = normalizeSubject(p)
-  fetchMaterijali().catch(console.error)
-})
 </script>
+
 
 
 
@@ -212,5 +191,6 @@ watch(() => route.params.predmet, (p) => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
