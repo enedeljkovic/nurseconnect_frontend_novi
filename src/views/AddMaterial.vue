@@ -46,18 +46,27 @@ import axios from 'axios';
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+
+function normalizeSubject(s) {
+  if (!s) return s;
+  try { s = decodeURIComponent(s); } catch {}
+  return s.replace(/\s*\(.*?\)\s*$/i, '').trim();
+}
+
 export default {
   name: 'AddMaterial',
   setup() {
     const route = useRoute();
     const router = useRouter();
-    const predmet = route.query.predmet || '';
+    
+    const predmetRaw = route.query.predmet || '';
+    const predmet = normalizeSubject(predmetRaw);
 
     const naziv = ref('');
     const opis = ref('');
     const imageUrl = ref('');
     const file = ref(null);
-    const razred = ref('');
+    const razred = ref(''); 
 
     const handleFile = (e) => {
       file.value = e.target.files[0];
@@ -70,20 +79,22 @@ export default {
         if (file.value) {
           const formData = new FormData();
           formData.append('file', file.value);
-          const res = await axios.post('http://localhost:3001/upload', formData);
-          fileUrl = res.data.fileUrl;
+          
+          const res = await axios.post('/upload', formData);
+          fileUrl = res.data.fileUrl; 
         }
 
-        await axios.post('http://localhost:3001/materials', {
+        await axios.post('/materials', {
           naziv: naziv.value,
           opis: opis.value,
-          imageUrl: imageUrl.value,
-          fileUrl,
-          subject: predmet,
-          razred: razred.value
+          imageUrl: imageUrl.value || null,
+          fileUrl: fileUrl || null,
+          subject: predmet,         
+          razred: razred.value || null
         });
 
-        router.push({ name: 'SubjectMaterials', params: { predmet } });
+       
+        router.push({ name: 'SubjectMaterials', params: { predmet: encodeURIComponent(predmet) } });
       } catch (error) {
         console.error('Greška pri dodavanju materijala:', error);
         alert('❌ Greška pri dodavanju materijala.');
@@ -151,3 +162,4 @@ export default {
   color: #444;
 }
 </style>
+
