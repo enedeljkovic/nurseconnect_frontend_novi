@@ -42,87 +42,62 @@
 </template>
 
 <script>
-import axios from 'axios';
-import { ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-
+import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { api } from '@/lib/api'   // <<-- novo
 
 function normalizeSubject(s) {
-  if (!s) return s;
-  try { s = decodeURIComponent(s); } catch {}
-  return s.replace(/\s*\(.*?\)\s*$/i, '').trim();
+  if (!s) return s
+  try { s = decodeURIComponent(s) } catch {}
+  return s.replace(/\s*\(.*?\)\s*$/i, '').trim()
 }
-
-
-const API = import.meta.env.VITE_API_URL || 'https://nurseconnect-backend-novi.onrender.com';
 
 export default {
   name: 'AddMaterial',
   setup() {
-    const route = useRoute();
-    const router = useRouter();
+    const route   = useRoute()
+    const router  = useRouter()
 
-    const predmetRaw = route.query.predmet || '';
-    const predmet = normalizeSubject(predmetRaw);
+    const predmet = normalizeSubject(route.query.predmet || '')
+    const naziv   = ref('')
+    const opis    = ref('')
+    const imageUrl= ref('')
+    const file    = ref(null)
+    const razred  = ref('') 
 
-    const naziv = ref('');
-    const opis = ref('');
-    const imageUrl = ref('');
-    const file = ref(null);
-    const razred = ref('');
-
-    const handleFile = (e) => {
-      file.value = e.target.files?.[0] || null;
-    };
+    const handleFile = (e) => { file.value = e.target.files[0] }
 
     const submitMaterial = async () => {
       try {
-        let fileUrl = '';
+        let fileUrl = null
 
-    
         if (file.value) {
-          const formData = new FormData();
-          formData.append('file', file.value);
-
-          const res = await axios.post(`${API}/upload`, formData);
-          fileUrl = res.data?.fileUrl || '';
+          const formData = new FormData()
+          formData.append('file', file.value)
+          const res = await api.post('/upload', formData)     
+          fileUrl = res.data.fileUrl || null
         }
 
-  
-        await axios.post(`${API}/materials`, {
+        await api.post('/materials', {
           naziv: naziv.value,
-          opis: opis.value,
+          opis:  opis.value,
           imageUrl: imageUrl.value || null,
-          fileUrl: fileUrl || null,
-          subject: predmet,
-          razred: razred.value || null
-        });
+          fileUrl,
+          subject: predmet,            
+          razred:  razred.value || null
+        })
 
-    
-        router.push({
-          name: 'SubjectMaterials',
-          params: { predmet: encodeURIComponent(predmet) }
-        });
-      } catch (error) {
-        console.error('Greška pri dodavanju materijala:', error);
-        alert('❌ Greška pri dodavanju materijala.');
+        router.push({ name: 'SubjectMaterials', params: { predmet: encodeURIComponent(predmet) } })
+      } catch (err) {
+        console.error('Greška pri dodavanju materijala:', err)
+        alert('❌ Greška pri dodavanju materijala.')
       }
-    };
+    }
 
-    return {
-      naziv,
-      opis,
-      imageUrl,
-      file,
-      predmet,
-      razred,
-      handleFile,
-      submitMaterial
-    };
+    return { naziv, opis, imageUrl, file, predmet, razred, handleFile, submitMaterial }
   }
-};
+}
 </script>
-
 
 
 <style scoped>
@@ -169,5 +144,6 @@ export default {
   color: #444;
 }
 </style>
+
 
 
