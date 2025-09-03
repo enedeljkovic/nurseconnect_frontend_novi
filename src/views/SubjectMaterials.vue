@@ -73,9 +73,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../lib/api.js'
+import axios from 'axios'
+
+
+const API = axios.create({
+  baseURL: import.meta.env.VITE_API || 'https://nurseconnect-backend-novi.onrender.com',
+  withCredentials: true,
+})
 
 function normalizeSubject(s){
   if (!s) return s
@@ -83,42 +89,58 @@ function normalizeSubject(s){
   return s.replace(/\s*\(.*?\)\s*$/,'').trim()
 }
 
+
 const route = useRoute()
 const router = useRouter()
-
-const predmet    = ref(normalizeSubject(route.params.predmet))
-const materijali = ref([])
-const user       = JSON.parse(localStorage.getItem('user') || '{}')
+const predmet = ref(normalizeSubject(route.params.predmet))
+const sve = ref([])             
+const user = JSON.parse(localStorage.getItem('user') || '{}')
 const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
 
+const materijaliPrikaz = computed(() => {
+  const sub = predmet.value
+  const raz = user?.razred
+  let list = sve.value.filter(m => m.subject === sub && m.razred === raz)
+  if (!isProfesor.value) {
+    list = list.filter(m => !m.isHidden)
+  }
+  return list
+})
+
+
 async function fetchMaterijali() {
   try {
+   
     const q = isProfesor.value ? '?includeHidden=1' : ''
-    const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}${q}`
-    const { data } = await api.get(url)
-    materijali.value = data
+    const { data } = await API.get(`/materials${q}`)
+    sve.value = Array.isArray(data) ? data : []
   } catch (err) {
     console.error('Greška kod dohvaćanja materijala:', err)
-    materijali.value = []
+    sve.value = []
   }
 }
 
 
-async function checkDozvola () {
-  if (!isProfesor.value || !user.id) return
-  const { data } = await api.get(`/profesori/${user.id}`)
-  predajePredmet.value =
-    Array.isArray(data?.Subjects) &&
-    data.Subjects.map(s => s.naziv).includes(predmet.value)
+async function checkDozvola() {
+  try {
+    if (!isProfesor.value || !user?.id) return
+    const { data } = await API.get(`/profesori/${user.id}`)
+    predajePredmet.value =
+      Array.isArray(data?.Subjects) &&
+      data.Subjects.map(s => s.naziv).includes(predmet.value)
+  } catch (e) {
+    console.error('Greška checkDozvola:', e)
+    predajePredmet.value = false
+  }
 }
 
 
 async function downloadAndMarkRead(m) {
   try {
     if (user?.id) {
-      await api.post(`/api/v1/progress/${user.id}/read/${m.id}`)
+      await API.post(`/api/v1/progress/${user.id}/read/${m.id}`)
       window.dispatchEvent(new CustomEvent('progress-updated'))
     }
     window.open(m.fileUrl, '_blank')
@@ -127,24 +149,23 @@ async function downloadAndMarkRead(m) {
   }
 }
 
-
 async function toggleHide(m) {
   try {
     const next = !m.isHidden
-    await api.patch(`/materials/${m.id}/hide`, { isHidden: next })
-    m.isHidden = next 
+    await API.patch(`/materials/${m.id}/hide`, { isHidden: next })
+    m.isHidden = next
   } catch (err) {
     console.error('Greška pri sakrivanju/otkrivanju:', err)
     alert('Greška: nije uspjelo sakriti/otkriti materijal.')
   }
 }
 
-
 async function removeMaterial(m) {
   if (!confirm('Sigurno obrisati materijal?')) return
   try {
-    await api.delete(`/materials/${m.id}`)
-    materijali.value = materijali.value.filter(x => x.id !== m.id)
+    await API.delete(`/materials/${m.id}`)
+    
+    sve.value = sve.value.filter(x => x.id !== m.id)
   } catch (err) {
     console.error('Greška pri brisanju:', err)
     alert('Greška: brisanje nije uspjelo.')
@@ -167,7 +188,6 @@ watch(() => route.params.predmet, v => {
   checkDozvola().catch(console.error)
 })
 </script>
-
 
 
 
@@ -270,6 +290,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
