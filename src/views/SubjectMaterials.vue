@@ -75,8 +75,8 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../lib/api.js' // tvoj axios instance
-
+import api from '../lib/api.js' 
+  
 function normalizeSubject(s){
   if (!s) return s
   try { s = decodeURIComponent(s) } catch {}
@@ -87,25 +87,33 @@ const route = useRoute()
 const router = useRouter()
 
 const predmet = ref(normalizeSubject(route.params.predmet))
-const materijali = ref([])                        // <<< uvijek lista
+const materijali = ref([])                       
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
-// DOHVAT – vrati na staru rutu i samo dodaj ?includeHidden=1 za profesore
+
 async function fetchMaterijali () {
   try {
-    const q = isProfesor.value ? '?includeHidden=1' : ''
-    const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred ?? '')}${q}`
-    const { data } = await api.get(url)
-    materijali.value = Array.isArray(data) ? data : []
+    if (isProfesor.value) {
+      
+      const { data } = await api.get(`/materials?includeHidden=1`)
+      materijali.value = (Array.isArray(data) ? data : [])
+        .filter(m => normalizeSubject(m.subject) === predmet.value)
+    } else {
+     
+      if (!user?.razred) { materijali.value = []; return }
+      const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}`
+      const { data } = await api.get(url)
+      materijali.value = Array.isArray(data) ? data : []
+    }
   } catch (err) {
     console.error('Greška kod dohvaćanja materijala:', err)
     materijali.value = []
   }
 }
 
-// provjera predaje li profesor taj predmet (ostavljeno kao prije)
+
 async function checkDozvola () {
   try {
     if (!isProfesor.value || !user?.id) return
@@ -119,7 +127,7 @@ async function checkDozvola () {
   }
 }
 
-// akcije
+
 async function toggleHide(m) {
   try {
     const next = !m.isHidden
@@ -271,6 +279,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
