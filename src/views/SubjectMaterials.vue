@@ -6,7 +6,6 @@
         ⬅ Natrag na početnu stranicu
       </router-link>
 
-      
       <button
         v-if="isProfesor && predajePredmet"
         class="btn btn-success"
@@ -16,21 +15,21 @@
       </button>
     </div>
 
-  
+   
     <h2 class="text-success mb-4">{{ predmet }}</h2>
 
+   
     <div v-if="materijali.length === 0" class="alert alert-warning text-center">
       📭 Nema materijala za ovaj predmet.
     </div>
 
-    
     <div class="row g-4" v-else>
       <div v-for="m in materijali" :key="m.id" class="col-md-6">
         <div class="card shadow-sm h-100">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2">
               <h5 class="card-title mb-0">{{ m.naziv }}</h5>
-              
+             
               <span v-if="m.isHidden" class="badge bg-warning text-dark">skriveno</span>
             </div>
 
@@ -47,7 +46,7 @@
               📎 Preuzmi datoteku
             </button>
 
-           
+            
             <div
               v-if="isProfesor && predajePredmet"
               class="mt-2 d-inline-flex gap-2"
@@ -73,16 +72,10 @@
   </div>
 </template>
 
-
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../lib/api.js'
-  const API = axios.create({
-  baseURL: import.meta.env.VITE_API || 'https://nurseconnect-backend-novi.onrender.com',
-  withCredentials: true,
-});
-
 
 function normalizeSubject(s){
   if (!s) return s
@@ -93,21 +86,22 @@ function normalizeSubject(s){
 const route = useRoute()
 const router = useRouter()
 
-const predmet = ref(normalizeSubject(route.params.predmet))
+const predmet    = ref(normalizeSubject(route.params.predmet))
 const materijali = ref([])
-const user = JSON.parse(localStorage.getItem('user') || '{}')
+const user       = JSON.parse(localStorage.getItem('user') || '{}')
 const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
+
 async function fetchMaterijali() {
   try {
-    const q = isProfesor.value ? '?includeHidden=1' : '';
-    const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}${q}`;
-    const { data } = await API.get(url);
-    materijali.value = data; 
+    const q = isProfesor.value ? '?includeHidden=1' : ''
+    const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}${q}`
+    const { data } = await api.get(url)
+    materijali.value = data
   } catch (err) {
-    console.error('Greška kod dohvaćanja materijala:', err);
-    materijali.value = [];
+    console.error('Greška kod dohvaćanja materijala:', err)
+    materijali.value = []
   }
 }
 
@@ -115,12 +109,52 @@ async function fetchMaterijali() {
 async function checkDozvola () {
   if (!isProfesor.value || !user.id) return
   const { data } = await api.get(`/profesori/${user.id}`)
-  predajePredmet.value = Array.isArray(data?.Subjects) && data.Subjects.map(s => s.naziv).includes(predmet.value)
+  predajePredmet.value =
+    Array.isArray(data?.Subjects) &&
+    data.Subjects.map(s => s.naziv).includes(predmet.value)
+}
+
+
+async function downloadAndMarkRead(m) {
+  try {
+    if (user?.id) {
+      await api.post(`/api/v1/progress/${user.id}/read/${m.id}`)
+      window.dispatchEvent(new CustomEvent('progress-updated'))
+    }
+    window.open(m.fileUrl, '_blank')
+  } catch (err) {
+    console.error('Greška pri označavanju pročitanog materijala:', err)
+  }
+}
+
+
+async function toggleHide(m) {
+  try {
+    const next = !m.isHidden
+    await api.patch(`/materials/${m.id}/hide`, { isHidden: next })
+    m.isHidden = next 
+  } catch (err) {
+    console.error('Greška pri sakrivanju/otkrivanju:', err)
+    alert('Greška: nije uspjelo sakriti/otkriti materijal.')
+  }
+}
+
+
+async function removeMaterial(m) {
+  if (!confirm('Sigurno obrisati materijal?')) return
+  try {
+    await api.delete(`/materials/${m.id}`)
+    materijali.value = materijali.value.filter(x => x.id !== m.id)
+  } catch (err) {
+    console.error('Greška pri brisanju:', err)
+    alert('Greška: brisanje nije uspjelo.')
+  }
 }
 
 function goToAddMaterial () {
   router.push({ name: 'AddMaterial', query: { predmet: encodeURIComponent(predmet.value) } })
 }
+
 
 onMounted(() => {
   fetchMaterijali().catch(console.error)
@@ -132,30 +166,8 @@ watch(() => route.params.predmet, v => {
   fetchMaterijali().catch(console.error)
   checkDozvola().catch(console.error)
 })
-
-  async function toggleHide(m) {
-  try {
-    const next = !m.isHidden;
-    await API.patch(`/materials/${m.id}/hide`, { isHidden: next });
-    m.isHidden = next; 
-  } catch (err) {
-    console.error('Greška pri sakrivanju/otkrivanju:', err);
-    alert('Greška: nije uspjelo sakriti/otkriti materijal.');
-  }
-}
-
-async function removeMaterial(m) {
-  if (!confirm('Sigurno obrisati materijal?')) return;
-  try {
-    await API.delete(`/materials/${m.id}`);
-    materijali.value = materijali.value.filter(x => x.id !== m.id);
-  } catch (err) {
-    console.error('Greška pri brisanju:', err);
-    alert('Greška: brisanje nije uspjelo.');
-  }
-}
-
 </script>
+
 
 
 
@@ -258,6 +270,7 @@ async function removeMaterial(m) {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
