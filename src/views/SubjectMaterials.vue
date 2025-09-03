@@ -75,7 +75,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '../lib/api.js' 
+import api from '../lib/api.js' // tvoj axios instance
 
 function normalizeSubject(s){
   if (!s) return s
@@ -87,61 +87,39 @@ const route = useRoute()
 const router = useRouter()
 
 const predmet = ref(normalizeSubject(route.params.predmet))
-const materijali = ref([]) 
+const materijali = ref([])                        // <<< uvijek lista
 const user = JSON.parse(localStorage.getItem('user') || '{}')
 const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
+// DOHVAT – vrati na staru rutu i samo dodaj ?includeHidden=1 za profesore
 async function fetchMaterijali () {
   try {
-    
     const q = isProfesor.value ? '?includeHidden=1' : ''
-    const { data } = await api.get(`/materials${q}`)
-    const all = Array.isArray(data) ? data : []
-
-    const sub = predmet.value
-    const raz = user?.razred
-
-    let filtered = all
-      .filter(m => normalizeSubject(m.subject) === sub)
-      .filter(m => m.razred === raz)
-
-    if (!isProfesor.value) {
-      filtered = filtered.filter(m => !m.isHidden)
-    }
-
-    materijali.value = filtered
+    const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred ?? '')}${q}`
+    const { data } = await api.get(url)
+    materijali.value = Array.isArray(data) ? data : []
   } catch (err) {
     console.error('Greška kod dohvaćanja materijala:', err)
     materijali.value = []
   }
 }
 
+// provjera predaje li profesor taj predmet (ostavljeno kao prije)
 async function checkDozvola () {
   try {
     if (!isProfesor.value || !user?.id) return
     const { data } = await api.get(`/profesori/${user.id}`)
     predajePredmet.value =
       Array.isArray(data?.Subjects) &&
-      data.Subjects.map(s => s.naziv).includes(predmet.value)
+      data.Subjects.some(s => normalizeSubject(s.naziv) === predmet.value)
   } catch (e) {
     console.error('Greška checkDozvola:', e)
     predajePredmet.value = false
   }
 }
 
-async function downloadAndMarkRead(m) {
-  try {
-    if (user?.id) {
-      await api.post(`/api/v1/progress/${user.id}/read/${m.id}`)
-      window.dispatchEvent(new CustomEvent('progress-updated'))
-    }
-    window.open(m.fileUrl, '_blank')
-  } catch (err) {
-    console.error('Greška pri označavanju pročitanog materijala:', err)
-  }
-}
-
+// akcije
 async function toggleHide(m) {
   try {
     const next = !m.isHidden
@@ -164,6 +142,18 @@ async function removeMaterial(m) {
   }
 }
 
+async function downloadAndMarkRead(m) {
+  try {
+    if (user?.id) {
+      await api.post(`/api/v1/progress/${user.id}/read/${m.id}`)
+      window.dispatchEvent(new CustomEvent('progress-updated'))
+    }
+    window.open(m.fileUrl, '_blank')
+  } catch (err) {
+    console.error('Greška pri označavanju pročitanog materijala:', err)
+  }
+}
+
 function goToAddMaterial () {
   router.push({ name: 'AddMaterial', query: { predmet: encodeURIComponent(predmet.value) } })
 }
@@ -179,6 +169,7 @@ watch(() => route.params.predmet, v => {
   checkDozvola().catch(console.error)
 })
 </script>
+
 
 
 
@@ -280,6 +271,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
