@@ -1,35 +1,71 @@
 <template>
   <div class="container my-5">
-    <!-- Gumb za povratak -->
-    <div class="text-start mb-3">
+   
+    <div class="d-flex justify-content-between align-items-center mb-3">
       <router-link to="/materials" class="btn btn-outline-primary">
         ⬅ Natrag na početnu stranicu
       </router-link>
+
+      
+      <button
+        v-if="isProfesor && predajePredmet"
+        class="btn btn-success"
+        @click="goToAddMaterial"
+      >
+        ＋ Dodaj materijal
+      </button>
     </div>
 
-    <!-- Naslov predmeta -->
-    <h2 class="text-success mb-4">{{ selectedSubject }}</h2>
+  
+    <h2 class="text-success mb-4">{{ predmet }}</h2>
 
-    <!-- Ako nema materijala -->
     <div v-if="materijali.length === 0" class="alert alert-warning text-center">
       📭 Nema materijala za ovaj predmet.
     </div>
 
-    <!-- Lista materijala -->
+    
     <div class="row g-4" v-else>
       <div v-for="m in materijali" :key="m.id" class="col-md-6">
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <h5 class="card-title">{{ m.naziv }}</h5>
-            <p class="card-text">{{ m.opis }}</p>
-            <p class="text-muted"><strong>Razred:</strong> {{ m.razred }}</p>
+            <div class="d-flex align-items-center gap-2">
+              <h5 class="card-title mb-0">{{ m.naziv }}</h5>
+              
+              <span v-if="m.isHidden" class="badge bg-warning text-dark">skriveno</span>
+            </div>
+
+            <p class="card-text mt-2">{{ m.opis }}</p>
+            <p class="text-muted mb-3">
+              <strong>Razred:</strong> {{ m.razred }}
+            </p>
+
             <button
               v-if="m.fileUrl"
-              class="btn btn-sm btn-outline-primary"
+              class="btn btn-sm btn-outline-primary me-2"
               @click="downloadAndMarkRead(m)"
             >
               📎 Preuzmi datoteku
             </button>
+
+           
+            <div
+              v-if="isProfesor && predajePredmet"
+              class="mt-2 d-inline-flex gap-2"
+            >
+              <button
+                class="btn btn-sm btn-outline-secondary"
+                @click="toggleHide(m)"
+              >
+                {{ m.isHidden ? 'Otkrij' : 'Sakrij' }}
+              </button>
+
+              <button
+                class="btn btn-sm btn-outline-danger"
+                @click="removeMaterial(m)"
+              >
+                🗑 Obriši
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -42,6 +78,11 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../lib/api.js'
+  const API = axios.create({
+  baseURL: import.meta.env.VITE_API || 'https://nurseconnect-backend-novi.onrender.com',
+  withCredentials: true,
+});
+
 
 function normalizeSubject(s){
   if (!s) return s
@@ -58,12 +99,18 @@ const user = JSON.parse(localStorage.getItem('user') || '{}')
 const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
-async function fetchMaterijali () {
-  const razred = user.razred || 'A'
-  const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(razred)}`
-  const { data } = await api.get(url)
-  materijali.value = data
+async function fetchMaterijali() {
+  try {
+    const q = isProfesor.value ? '?includeHidden=1' : '';
+    const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}${q}`;
+    const { data } = await API.get(url);
+    materijali.value = data; 
+  } catch (err) {
+    console.error('Greška kod dohvaćanja materijala:', err);
+    materijali.value = [];
+  }
 }
+
 
 async function checkDozvola () {
   if (!isProfesor.value || !user.id) return
@@ -85,6 +132,29 @@ watch(() => route.params.predmet, v => {
   fetchMaterijali().catch(console.error)
   checkDozvola().catch(console.error)
 })
+
+  async function toggleHide(m) {
+  try {
+    const next = !m.isHidden;
+    await API.patch(`/materials/${m.id}/hide`, { isHidden: next });
+    m.isHidden = next; 
+  } catch (err) {
+    console.error('Greška pri sakrivanju/otkrivanju:', err);
+    alert('Greška: nije uspjelo sakriti/otkriti materijal.');
+  }
+}
+
+async function removeMaterial(m) {
+  if (!confirm('Sigurno obrisati materijal?')) return;
+  try {
+    await API.delete(`/materials/${m.id}`);
+    materijali.value = materijali.value.filter(x => x.id !== m.id);
+  } catch (err) {
+    console.error('Greška pri brisanju:', err);
+    alert('Greška: brisanje nije uspjelo.');
+  }
+}
+
 </script>
 
 
@@ -188,6 +258,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
