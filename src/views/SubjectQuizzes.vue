@@ -20,10 +20,11 @@
         <div>
           <h5 class="mb-1">{{ quiz.naziv }}</h5>
           <small>{{ (quiz.pitanja && quiz.pitanja.length) || 0 }} pitanja</small>
+          <div class="text-muted">Razred: {{ quiz.razred }}</div>
         </div>
 
         <div class="d-flex gap-2">
-        
+          
           <button
             v-if="!isProfesor"
             class="btn btn-outline-success"
@@ -96,4 +97,5 @@ export default {
   }
 };
 </script>
+
 
