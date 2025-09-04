@@ -46,6 +46,13 @@
               📎 Preuzmi datoteku
             </button>
 
+            <button
+    class="btn btn-sm btn-outline-secondary me-2"
+    @click="openEdit(m)"
+  >
+    ✏️ Uredi
+  </button>
+
             
             <div
               v-if="isProfesor && predajePredmet"
@@ -165,6 +172,60 @@ async function downloadAndMarkRead(m) {
 function goToAddMaterial () {
   router.push({ name: 'AddMaterial', query: { predmet: encodeURIComponent(predmet.value) } })
 }
+  // ====== UREDI MATERIJAL (state) ======
+const showEdit = ref(false)
+const editItem = ref(null)
+const editForm = ref({ naziv:'', opis:'', razred:'', imageUrl:'', file:null })
+
+function openEdit(m){
+  editItem.value = m
+  editForm.value = {
+    naziv: m.naziv || '',
+    opis: m.opis || '',
+    razred: m.razred || '',
+    imageUrl: m.imageUrl || '',
+    file: null
+  }
+  showEdit.value = true
+}
+
+function onFile(e){
+  editForm.value.file = e.target.files?.[0] || null
+}
+
+async function saveEdit(){
+  try{
+    
+    let fileUrl = editItem.value.fileUrl || null
+    if (editForm.value.file){
+      const fd = new FormData()
+      fd.append('file', editForm.value.file)
+      const up = await API.post('/upload', fd)
+      fileUrl = up.data.fileUrl || fileUrl
+    }
+
+   
+    const payload = {
+      naziv: editForm.value.naziv,
+      opis: editForm.value.opis,
+      imageUrl: editForm.value.imageUrl || null,
+      fileUrl,
+      razred: editForm.value.razred || editItem.value.razred,
+    }
+
+    
+    const { data } = await API.put(`/materials/${editItem.value.id}`, payload)
+
+ 
+    Object.assign(editItem.value, data)
+
+    showEdit.value = false
+  }catch(err){
+    console.error(err)
+    alert('Greška pri spremanju.')
+  }
+}
+
 
 onMounted(() => {
   fetchMaterijali().catch(console.error)
@@ -279,6 +340,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
