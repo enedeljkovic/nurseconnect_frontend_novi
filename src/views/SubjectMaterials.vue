@@ -1,6 +1,6 @@
 <template>
   <div class="container my-5">
-   
+    <!-- Back + Dodaj -->
     <div class="d-flex justify-content-between align-items-center mb-3">
       <router-link to="/materials" class="btn btn-outline-primary">
         ⬅ Natrag na početnu stranicu
@@ -15,21 +15,21 @@
       </button>
     </div>
 
-   
+    <!-- Naslov predmeta -->
     <h2 class="text-success mb-4">{{ predmet }}</h2>
 
-   
-    <div v-if="materijali.length === 0" class="alert alert-warning text-center">
+    <!-- Ako nema materijala -->
+    <div v-if="materijali && materijali.length === 0" class="alert alert-warning text-center">
       📭 Nema materijala za ovaj predmet.
     </div>
 
+    <!-- Lista materijala -->
     <div class="row g-4" v-else>
       <div v-for="m in materijali" :key="m.id" class="col-md-6">
         <div class="card shadow-sm h-100">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2">
               <h5 class="card-title mb-0">{{ m.naziv }}</h5>
-             
               <span v-if="m.isHidden" class="badge bg-warning text-dark">skriveno</span>
             </div>
 
@@ -46,18 +46,18 @@
               📎 Preuzmi datoteku
             </button>
 
-            <button
-    class="btn btn-sm btn-outline-secondary me-2"
-    @click="openEdit(m)"
-  >
-    ✏️ Uredi
-  </button>
-
-            
+            <!-- Kontrole samo za profesora koji predaje predmet -->
             <div
               v-if="isProfesor && predajePredmet"
               class="mt-2 d-inline-flex gap-2"
             >
+              <button
+                class="btn btn-sm btn-outline-secondary me-2"
+                @click="openEdit(m)"
+              >
+                ✏️ Uredi
+              </button>
+
               <button
                 class="btn btn-sm btn-outline-secondary"
                 @click="toggleHide(m)"
@@ -76,6 +76,51 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal: Uredi materijal -->
+    <div v-if="showEdit" class="modal fade show d-block" style="background:rgba(0,0,0,.35)">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Uredi materijal</h5>
+            <button class="btn-close" @click="showEdit=false"></button>
+          </div>
+
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Naziv</label>
+              <input v-model="editForm.naziv" class="form-control">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Opis</label>
+              <textarea v-model="editForm.opis" class="form-control"></textarea>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Razred</label>
+              <input v-model="editForm.razred" class="form-control">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Slika (URL)</label>
+              <input v-model="editForm.imageUrl" class="form-control" placeholder="https://...">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">PDF/PPTX (ako želiš zamijeniti)</label>
+              <input type="file" class="form-control" accept=".pdf,.ppt,.pptx" @change="onFile">
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-light" @click="showEdit=false">Odustani</button>
+            <button class="btn btn-primary" @click="saveEdit">Spremi</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
   </div>
 </template>
 
@@ -340,6 +385,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
