@@ -1,6 +1,6 @@
 <template>
   <div class="container my-5">
-    <!-- Natrag gumb na vrhu stranice -->
+   
     <div class="text-start mb-3">
       <router-link to="/home" class="btn btn-outline-primary">
         ⬅ Natrag na početnu stranicu
@@ -9,7 +9,7 @@
 
     <h2 class="text-center mb-5 text-primary">🧠 Kvizovi po predmetima</h2>
 
-    <!-- Odabir predmeta -->
+   
     <div v-if="!selectedSubject" class="row g-4">
       <div
         v-for="predmet in predmeti"
@@ -27,7 +27,7 @@
       </div>
     </div>
 
-    <!-- Kvizovi za odabrani predmet -->
+   
     <div v-else>
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="text-success">{{ selectedSubject }}</h3>
@@ -39,7 +39,6 @@
           >
             + Dodaj kviz
           </button>
-          
         </div>
       </div>
 
@@ -57,6 +56,7 @@
                 <p class="text-muted"><strong>Razred:</strong> {{ quiz.razred }}</p>
               </div>
 
+             
               <button
                 v-if="!isProfesor"
                 class="btn btn-outline-success mt-3"
@@ -65,13 +65,25 @@
                 {{ solvedQuizzes[quiz.id] ? '👁 Pogledaj riješeni kviz' : '▶ Riješi kviz' }}
               </button>
 
-              <button
-                v-else
-                class="btn btn-outline-info mt-3"
-                @click="goToQuiz(quiz.id)"
-              >
-                👁 Pregled pitanja
-              </button>
+          
+              <div v-else class="d-flex gap-2 mt-3">
+                <button
+                  class="btn btn-outline-info"
+                  @click="goToQuiz(quiz.id)"
+                >
+                  👁 Pregled pitanja
+                </button>
+
+               
+                <button
+                  class="btn btn-outline-danger"
+                  @click="removeQuiz(quiz)"
+                  title="Obriši kviz"
+                >
+                  🗑 Obriši
+                </button>
+              </div>
+             
             </div>
           </div>
         </div>
@@ -165,6 +177,21 @@ export default {
 
     if (isProfesor.value) fetchProfesorPredmeti();
 
+    const removeQuiz = async (quiz) => {
+      if (!confirm('Sigurno obrisati ovaj kviz?')) return;
+      try {
+        await axios.delete(`${API_BASE}/quizzes/${quiz.id}`, {
+         
+          data: { profesorId: user?.id }
+        });
+       
+        quizzes.value = quizzes.value.filter(q => q.id !== quiz.id);
+      } catch (err) {
+        console.error('Greška pri brisanju kviza:', err);
+        alert('Greška: brisanje nije uspjelo.');
+      }
+    };
+
     return {
       predmeti,
       quizzes,
@@ -206,3 +233,4 @@ export default {
   background-color: #f5fcff;
 }
 </style>
+
