@@ -24,7 +24,7 @@
         </div>
 
         <div class="d-flex gap-2">
-          
+        
           <button
             v-if="!isProfesor"
             class="btn btn-outline-success"
@@ -33,7 +33,7 @@
             Riješi kviz
           </button>
 
-        
+     
           <button
             v-if="isProfesor && predajePredmet"
             class="btn btn-outline-danger"
@@ -97,5 +97,6 @@ export default {
   }
 };
 </script>
+
 
 
