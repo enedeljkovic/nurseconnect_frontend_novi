@@ -1,6 +1,6 @@
 <template>
   <div class="container my-5">
-   
+    
     <div class="text-start mb-3">
       <router-link to="/home" class="btn btn-outline-primary">
         ⬅ Natrag na početnu stranicu
@@ -9,7 +9,7 @@
 
     <h2 class="text-center mb-5 text-primary">🧠 Kvizovi po predmetima</h2>
 
-   
+    
     <div v-if="!selectedSubject" class="row g-4">
       <div
         v-for="predmet in predmeti"
@@ -52,11 +52,11 @@
             <div class="card-body d-flex flex-column justify-content-between">
               <div>
                 <h5 class="card-title text-dark fw-bold">{{ quiz.naziv }}</h5>
-                <p class="text-muted">{{ quiz.pitanja.length }} pitanja</p>
+                <p class="text-muted">{{ (quiz.pitanja && quiz.pitanja.length) || 0 }} pitanja</p>
                 <p class="text-muted"><strong>Razred:</strong> {{ quiz.razred }}</p>
               </div>
 
-             
+              
               <button
                 v-if="!isProfesor"
                 class="btn btn-outline-success mt-3"
@@ -65,7 +65,7 @@
                 {{ solvedQuizzes[quiz.id] ? '👁 Pogledaj riješeni kviz' : '▶ Riješi kviz' }}
               </button>
 
-          
+             
               <div v-else class="d-flex gap-2 mt-3">
                 <button
                   class="btn btn-outline-info"
@@ -73,8 +73,6 @@
                 >
                   👁 Pregled pitanja
                 </button>
-
-               
                 <button
                   class="btn btn-outline-danger"
                   @click="removeQuiz(quiz)"
@@ -83,7 +81,6 @@
                   🗑 Obriši
                 </button>
               </div>
-             
             </div>
           </div>
         </div>
@@ -92,11 +89,10 @@
   </div>
 </template>
 
-
 <script>
-import axios from 'axios';
-import { ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import api from '../lib/api.js' 
 
 export default {
   name: 'Quizzes',
@@ -107,90 +103,89 @@ export default {
       'Opća načela zdravlja i njege', 'Zdravstvena njega - opća',
       'Zdravstvena njega zdravog djeteta i adolescenta', 'Osnove fizikalne i radne terapije (izborni)',
       'Profesionalna komunikacija u sestrinstvu (izborni)', 'Sat razrednika'
-    ];
+    ]
 
-    const quizzes = ref([]);
-    const solvedQuizzes = ref({});
-    const selectedSubject = ref(null);
-    const router = useRouter();
+    const quizzes = ref([])
+    const solvedQuizzes = ref({})
+    const selectedSubject = ref(null)
+    const router = useRouter()
 
-    const user = JSON.parse(localStorage.getItem('user'));
-    const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
-    const profesorPredmeti = ref([]);
-    const razred = ref(user?.razred || null);
+    const user = JSON.parse(localStorage.getItem('user'))
+    const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
+    const profesorPredmeti = ref([])
+    const razred = ref(user?.razred || null)
 
-    const mozeDodatiKviz = computed(() => {
-      return isProfesor.value && selectedSubject.value && profesorPredmeti.value.includes(selectedSubject.value);
-    });
+    const mozeDodatiKviz = computed(() =>
+      isProfesor.value &&
+      selectedSubject.value &&
+      profesorPredmeti.value.includes(selectedSubject.value)
+    )
 
-    const fetchQuizzesForSubject = async (predmet) => {
+    async function fetchQuizzesForSubject(predmet) {
       try {
-        const res = await axios.get(`http://localhost:3001/quizzes/subject/${encodeURIComponent(predmet)}`);
-        let allQuizzes = res.data;
-
+        const { data } = await api.get(`/quizzes/subject/${encodeURIComponent(predmet)}`)
+        let all = data || []
         if (!isProfesor.value && razred.value) {
-          allQuizzes = allQuizzes.filter(kviz => kviz.razred === razred.value);
+          all = all.filter(k => k.razred === razred.value)
         }
-
-        quizzes.value = allQuizzes;
-        await checkSolvedQuizzes(allQuizzes.map(q => q.id));
-      } catch (error) {
-        console.error('Greška pri dohvaćanju kvizova:', error);
+        quizzes.value = all
+        await checkSolvedQuizzes(all.map(q => q.id))
+      } catch (e) {
+        console.error('Greška pri dohvaćanju kvizova:', e)
       }
-    };
+    }
 
-    const checkSolvedQuizzes = async (quizIds) => {
-      solvedQuizzes.value = {};
+    async function checkSolvedQuizzes(quizIds) {
+      solvedQuizzes.value = {}
+      if (!user?.id) return
       for (const id of quizIds) {
         try {
-          const res = await axios.get(`http://localhost:3001/solved/${user.id}/${id}`);
-          solvedQuizzes.value[id] = res.data.solved;
-        } catch (err) {
-          console.error('Greška pri provjeri riješenih kvizova:', err);
+          const { data } = await api.get(`/solved/${user.id}/${id}`)
+          solvedQuizzes.value[id] = !!data?.solved
+        } catch (e) {
+          console.error('Greška provjere riješenih kvizova:', e)
         }
       }
-    };
+    }
 
-    const fetchProfesorPredmeti = async () => {
-      if (!user?.id) return;
+    async function fetchProfesorPredmeti() {
+      if (!user?.id) return
       try {
-        const res = await axios.get(`http://localhost:3001/profesori/${user.id}`);
-        profesorPredmeti.value = res.data.Subjects.map(s => s.naziv);
-        localStorage.setItem('profesorPredmeti', JSON.stringify(profesorPredmeti.value));
-      } catch (err) {
-        console.error('Greška pri dohvaćanju predmeta profesora:', err);
+        const { data } = await api.get(`/profesori/${user.id}`)
+        profesorPredmeti.value = (data?.Subjects || []).map(s => s.naziv)
+        localStorage.setItem('profesorPredmeti', JSON.stringify(profesorPredmeti.value))
+      } catch (e) {
+        console.error('Greška dohvaćanja predmeta profesora:', e)
       }
-    };
+    }
 
-    const selectSubject = (predmet) => {
-      selectedSubject.value = predmet;
-      fetchQuizzesForSubject(predmet);
-    };
+    function selectSubject(predmet) {
+      selectedSubject.value = predmet
+      fetchQuizzesForSubject(predmet)
+    }
 
-    const goToAddQuiz = (predmet) => {
-      router.push({ name: 'AddQuiz', query: { predmet } });
-    };
+    function goToAddQuiz(predmet) {
+      router.push({ name: 'AddQuiz', query: { predmet } })
+    }
 
-    const goToQuiz = (id) => {
-      router.push(`/quizzes/${id}`);
-    };
+    function goToQuiz(id) {
+      router.push(`/quizzes/${id}`)
+    }
 
-    if (isProfesor.value) fetchProfesorPredmeti();
+    if (isProfesor.value) fetchProfesorPredmeti()
 
-    const removeQuiz = async (quiz) => {
-      if (!confirm('Sigurno obrisati ovaj kviz?')) return;
+    
+    async function removeQuiz(quiz) {
+      if (!isProfesor.value) return
+      if (!confirm('Sigurno obrisati ovaj kviz?')) return
       try {
-        await axios.delete(`${API_BASE}/quizzes/${quiz.id}`, {
-         
-          data: { profesorId: user?.id }
-        });
-       
-        quizzes.value = quizzes.value.filter(q => q.id !== quiz.id);
-      } catch (err) {
-        console.error('Greška pri brisanju kviza:', err);
-        alert('Greška: brisanje nije uspjelo.');
+        await api.delete(`/quizzes/${quiz.id}`) 
+        quizzes.value = quizzes.value.filter(q => q.id !== quiz.id)
+      } catch (e) {
+        console.error('Greška pri brisanju kviza:', e)
+        alert('Greška: brisanje nije uspjelo.')
       }
-    };
+    }
 
     return {
       predmeti,
@@ -201,15 +196,12 @@ export default {
       mozeDodatiKviz,
       selectSubject,
       goToAddQuiz,
-      goToQuiz
-    };
+      goToQuiz,
+      removeQuiz
+    }
   }
-};
+}
 </script>
-
-
-
-
 
 <style scoped>
 .predmet-card {
@@ -233,4 +225,3 @@ export default {
   background-color: #f5fcff;
 }
 </style>
-
