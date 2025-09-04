@@ -33,7 +33,8 @@
 
       <div class="mb-3">
         <label class="form-label">PDF datoteka</label>
-        <input type="file" @change="handleFile" class="form-control" accept=".pdf" />
+        <input type="file" accept=".pdf,.ppt,.pptx" @change="handleFile">
+
       </div>
 
       <button type="submit" class="btn btn-primary w-100">✅ Dodaj materijal</button>
@@ -145,6 +146,7 @@ export default {
   color: #444;
 }
 </style>
+
 
 
 
