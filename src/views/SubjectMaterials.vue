@@ -245,7 +245,7 @@ async function saveEdit(){
     if (editForm.value.file){
       const fd = new FormData()
       fd.append('file', editForm.value.file)
-      const up = await API.post('/upload', fd)
+      const up = await api.post('/upload', fd)
       fileUrl = up.data.fileUrl || fileUrl
     }
 
@@ -259,7 +259,7 @@ async function saveEdit(){
     }
 
     
-    const { data } = await API.put(`/materials/${editItem.value.id}`, payload)
+   const { data } = await api.put(`/materials/${editItem.value.id}`, payload)
 
  
     Object.assign(editItem.value, data)
@@ -385,6 +385,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
