@@ -2,8 +2,9 @@
   <div class="container my-5">
     <h2 class="text-center mb-4">{{ predmet }} - kvizovi</h2>
 
-    <div class="text-end mb-3" v-if="isProfesor">
-      <button class="btn btn-primary" @click="dodajNoviKviz">+ Dodaj kviz</button>
+   
+    <div class="text-end mb-3" v-if="isProfesor && predajePredmet">
+      <button class="btn btn-primary" @click="dodajNoviKviz">＋ Dodaj kviz</button>
     </div>
 
     <div v-if="quizzes.length === 0" class="alert alert-info">
@@ -11,12 +12,36 @@
     </div>
 
     <ul class="list-group" v-else>
-      <li v-for="quiz in quizzes" :key="quiz.id" class="list-group-item d-flex justify-content-between align-items-center">
+      <li
+        v-for="quiz in quizzes"
+        :key="quiz.id"
+        class="list-group-item d-flex justify-content-between align-items-center"
+      >
         <div>
           <h5 class="mb-1">{{ quiz.naziv }}</h5>
-          <small>{{ quiz.pitanja.length }} pitanja</small>
+          <small>{{ (quiz.pitanja && quiz.pitanja.length) || 0 }} pitanja</small>
         </div>
-        <button class="btn btn-outline-success" @click="rjesiKviz(quiz.id)">Riješi kviz</button>
+
+        <div class="d-flex gap-2">
+        
+          <button
+            v-if="!isProfesor"
+            class="btn btn-outline-success"
+            @click="rjesiKviz(quiz.id)"
+          >
+            Riješi kviz
+          </button>
+
+        
+          <button
+            v-if="isProfesor && predajePredmet"
+            class="btn btn-outline-danger"
+            @click="removeQuiz(quiz)"
+            title="Obriši kviz"
+          >
+            🗑 Obriši
+          </button>
+        </div>
       </li>
     </ul>
   </div>
@@ -53,9 +78,22 @@ export default {
       router.push(`/quizzes/${id}`);
     };
 
+    async function removeQuiz(q) {
+  if (!confirm('Sigurno obrisati ovaj kviz?')) return;
+  try {
+    
+    await api.delete(`/quizzes/${q.id}`, { data: { profesorId: user.id } });
+    kvizovi.value = kvizovi.value.filter(x => x.id !== q.id);
+  } catch (err) {
+    console.error('Greška pri brisanju kviza:', err);
+    alert('Greška: brisanje nije uspjelo.');
+  }
+}
+
     onMounted(fetchQuizzes);
 
     return { quizzes, predmet, rjesiKviz, dodajNoviKviz, isProfesor };
   }
 };
 </script>
+
