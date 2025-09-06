@@ -125,182 +125,138 @@
 
 
 <script>
-import axios from 'axios';
-import { ref, onMounted, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
+import api from '../lib/api'  
 
 export default {
   name: 'TakeQuiz',
   setup() {
-    const route = useRoute();
-    const router = useRouter();
+    const route = useRoute()
+    const quizId = Number(route.params.id)
 
-    // --- ID zaštita ---
-    const idParam = route.params.id;
-    const quizId = Number(idParam);
-    if (!Number.isFinite(quizId) || quizId <= 0) {
-      alert('Neispravan ID kviza.');
-      router.replace('/quizzes');
+    const quiz = ref(null)
+    const odgovori = ref([])
+    const rezultat = ref([])
+    const alreadySolved = ref(false)
+
+    const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+
+    
+    const quizStart = ref(0)
+    const perQuestionMs = ref([])       
+    const currentQStart = ref(0)
+    const currentIndex = ref(0)
+
+    const startTimers = (n) => {
+      quizStart.value = Date.now()
+      perQuestionMs.value = Array.from({ length: n }, () => 0)
+      currentIndex.value = 0
+      currentQStart.value = Date.now()
     }
-
-    const quiz = ref(null);
-    const odgovori = ref([]);
-    const rezultat = ref([]);
-    const alreadySolved = ref(false);
-    const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-
-    // Baza backenda (ako imaš VITE_API_BASE_URL koristi njega)
-    const API_BASE =
-      import.meta.env.VITE_API_BASE_URL ||
-      'https://nurseconnect-backend-novi.onrender.com';
-
-    // helper: GET s fallbackom na /api/v1
-    async function getWithFallback(path) {
-      const url1 = `${API_BASE}${path}`;
-      console.log('[GET]', url1);
-      try {
-        return await axios.get(url1);
-      } catch (e) {
-        if (e?.response?.status === 404) {
-          const url2 = `${API_BASE}/api/v1${path}`;
-          console.log('[GET fallback]', url2);
-          return await axios.get(url2);
-        }
-        throw e;
+    const switchTo = (i) => {
+     
+      const prev = currentIndex.value
+      if (quiz.value && quiz.value.pitanja && quiz.value.pitanja[prev] && currentQStart.value) {
+        perQuestionMs.value[prev] += Date.now() - currentQStart.value
       }
+      currentIndex.value = i
+      currentQStart.value = Date.now()
     }
-
-    // helper: POST s fallbackom na /api/v1
-    async function postWithFallback(path, body) {
-      const url1 = `${API_BASE}${path}`;
-      console.log('[POST]', url1, body);
-      try {
-        return await axios.post(url1, body);
-      } catch (e) {
-        if (e?.response?.status === 404) {
-          const url2 = `${API_BASE}/api/v1${path}`;
-          console.log('[POST fallback]', url2, body);
-          return await axios.post(url2, body);
-        }
-        throw e;
-      }
-    }
-
-    // mjerenje trajanja
-    const startTime = Date.now();
-    const perQuestionMs = ref([]); // može ostati prazno; backend prima null
 
     const fetchQuiz = async () => {
       try {
-        // 1) Dohvati kviz
-        const q = await getWithFallback(`/quizzes/${quizId}`);
-        quiz.value = q.data;
+        const { data } = await api.get(`/quizzes/${quizId}`)
+        quiz.value = data
 
-        // 2) Ako je učenik, provjeri je li već rješavao
-        if (!isProfesor.value && user?.id) {
-          try {
-            const solved = await getWithFallback(`/solved/${user.id}/${quizId}`);
-            if (solved.data?.solved) {
-              alreadySolved.value = true;
-              rezultat.value = solved.data.rezultat || [];
-              // pokaži točne odgovore za pregled
-              odgovori.value = (quiz.value.pitanja || []).map(p => p.correct);
-              return;
-            }
-          } catch (e) {
-            // 404 za /solved nije kritičan—samo znači da nema zapisa
-            if (e?.response?.status !== 404) throw e;
+       
+        if (!isProfesor.value) {
+          const solved = await api.get(`/solved/${user.id}/${quizId}`)
+          if (solved.data?.solved) {
+            alreadySolved.value = true
+            rezultat.value = solved.data.rezultat || []
+            odgovori.value = quiz.value.pitanja.map(p => p.correct)
+          } else {
+            odgovori.value = quiz.value.pitanja.map(p => {
+              if (p.type === 'truefalse') return ''      
+              if (p.type === 'hotspot')  return null     
+              return []                                  
+            })
+       
+            startTimers(quiz.value.pitanja.length)
           }
         }
-
-        // 3) Inicijaliziraj prazne odgovore
-        odgovori.value = (quiz.value.pitanja || []).map(p => {
-          if (p.type === 'truefalse') return '';
-          if (p.type === 'hotspot') return null;
-          return [];
-        });
       } catch (err) {
-        if (err?.response?.status === 404) {
-          alert('Kviz nije pronađen ili je obrisan.');
-          return router.replace('/quizzes');
-        }
-        console.error('Greška pri dohvaćanju kviza:', err);
-        alert('Ne mogu dohvatiti kviz. Pokušaj ponovno.');
-        router.replace('/quizzes');
+        console.error('Greška pri dohvaćanju kviza:', err)
       }
-    };
+    }
 
     const submitAnswers = async () => {
       try {
-        const durationSec = Math.round((Date.now() - startTime) / 1000);
-        const body = {
+    
+        if (quiz.value?.pitanja?.[currentIndex.value] && currentQStart.value) {
+          perQuestionMs.value[currentIndex.value] += Date.now() - currentQStart.value
+        }
+        const durationSec = Math.round((Date.now() - quizStart.value) / 1000)
+
+        const { data } = await api.post(`/quizzes/${quizId}/check-answers`, {
           odgovori: odgovori.value,
-          studentId: user?.id,
+          studentId: user.id,
           durationSec,
-          perQuestionMs: perQuestionMs.value?.length ? perQuestionMs.value : null,
-        };
-        const res = await postWithFallback(`/quizzes/${quizId}/check-answers`, body);
-        rezultat.value = res.data?.rezultat || [];
-        alreadySolved.value = true;
+          perQuestionMs: perQuestionMs.value
+        })
+        rezultat.value = data.rezultat || []
+        alreadySolved.value = true
       } catch (err) {
-        if (err?.response?.status === 403) {
-          alert('❌ Dosegnut je maksimalan broj pokušaja.');
-        } else if (err?.response?.status === 404) {
-          alert('Kviz nije pronađen (možda je obrisan).');
-          router.replace('/quizzes');
+        if (err.response?.status === 403) {
+          alert('❌ Dosegnut je maksimalan broj pokušaja.')
         } else {
-          console.error('Greška pri slanju odgovora:', err);
-          alert('Ne mogu poslati odgovore.');
+          console.error('Greška pri slanju odgovora:', err)
         }
       }
-    };
+    }
 
+  
     const toggleImageChoice = (qi, val) => {
-      if (!odgovori.value[qi]) odgovori.value[qi] = [];
-      const i = odgovori.value[qi].indexOf(val);
-      if (i >= 0) odgovori.value[qi].splice(i, 1);
-      else odgovori.value[qi].push(val);
-    };
+      switchTo(qi)
+      if (!Array.isArray(odgovori.value[qi])) odgovori.value[qi] = []
+      const i = odgovori.value[qi].indexOf(val)
+      if (i >= 0) odgovori.value[qi].splice(i, 1)
+      else odgovori.value[qi].push(val)
+    }
 
     const handleHotspotClick = (ev, qi) => {
-      const rect = ev.currentTarget.getBoundingClientRect();
-      const x = ev.clientX - rect.left;
-      const y = ev.clientY - rect.top;
-      odgovori.value[qi] = { x, y };
-    };
+      switchTo(qi)
+      const rect = ev.currentTarget.getBoundingClientRect()
+      const x = ev.clientX - rect.left
+      const y = ev.clientY - rect.top
+      odgovori.value[qi] = { x, y }
+    }
 
-    const brojTocnih = computed(() => rezultat.value.filter(Boolean).length);
-    const postotak = computed(() =>
+    const brojTocnih = computed(() => rezultat.value.filter(Boolean).length)
+    const postotak  = computed(() =>
       rezultat.value.length ? Math.round((brojTocnih.value / rezultat.value.length) * 100) : 0
-    );
+    )
 
-    const formatOdgovor = (odg) => {
-      if (Array.isArray(odg)) return odg.join(', ');
-      if (odg && typeof odg === 'object' && odg.x != null && odg.y != null) {
-        return `(${Math.round(odg.x)}, ${Math.round(odg.y)})`;
-      }
-      return odg ?? '';
-    };
-
-    onMounted(fetchQuiz);
+    onMounted(fetchQuiz)
 
     return {
       quiz,
       odgovori,
       rezultat,
       alreadySolved,
+      isProfesor,
       brojTocnih,
       postotak,
       submitAnswers,
-      formatOdgovor,
-      isProfesor,
       toggleImageChoice,
-      handleHotspotClick,
-    };
+      handleHotspotClick
+    }
   }
-};
+}
 </script>
+
 
 
 
@@ -346,5 +302,6 @@ export default {
 }
 
 </style>
+
 
 
