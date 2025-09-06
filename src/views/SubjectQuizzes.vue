@@ -2,7 +2,7 @@
   <div class="container my-5">
     <h2 class="text-center mb-4">{{ predmet }} - kvizovi</h2>
 
-   
+    <!-- Dodaj kviz (samo profesor) -->
     <div class="text-end mb-3" v-if="isProfesor">
       <button class="btn btn-primary" @click="dodajNoviKviz">+ Dodaj kviz</button>
     </div>
@@ -24,16 +24,31 @@
         </div>
 
         <div class="d-flex gap-2">
-          
+          <!-- UČENIK: Riješi ako nije riješen, inače Pregled -->
           <button
-            v-if="!isProfesor"
+            v-if="!isProfesor && !solvedQuizzes[quiz.id]"
             class="btn btn-outline-success"
-            @click="rjesiKviz(quiz.id)"
+            @click="otvoriKviz(quiz.id)"
           >
-            Riješi kviz
+            ▶ Riješi kviz
+          </button>
+          <button
+            v-else-if="!isProfesor && solvedQuizzes[quiz.id]"
+            class="btn btn-outline-info"
+            @click="otvoriKviz(quiz.id)"
+          >
+            👁 Pregled pitanja
           </button>
 
-         
+          <!-- PROFESOR: Pregled + Obriši -->
+          <button
+            v-if="isProfesor"
+            class="btn btn-outline-info"
+            @click="otvoriKviz(quiz.id)"
+          >
+            👁 Pregled pitanja
+          </button>
+
           <button
             v-if="isProfesor"
             class="btn btn-outline-danger"
@@ -60,41 +75,63 @@ export default {
     const router = useRouter();
 
     const quizzes = ref([]);
+    const solvedQuizzes = ref({}); // { [quizId]: true/false }
     const predmet = decodeURIComponent(route.params.subject || route.params.predmet || '');
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
 
-    
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-    const API_BASE = 'http://localhost:3001'; 
+    // Ako koristiš svoj api wrapper, slobodno zamijeni sve "axios" pozive s njim.
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
+    // ---- API pozivi ----
     const fetchQuizzes = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/quizzes?predmet=${encodeURIComponent(predmet)}`);
-        quizzes.value = res.data;
+        // ispravno filtriranje po predmetu
+        const res = await axios.get(`${API_BASE}/quizzes/subject/${encodeURIComponent(predmet)}`);
+        quizzes.value = Array.isArray(res.data) ? res.data : [];
+
+        // nakon što dohvatimo listu, provjeri za svakog je li riješen (samo za učenika)
+        if (!isProfesor.value && user?.id) {
+          await checkSolvedForAll();
+        }
       } catch (error) {
         console.error('Greška pri dohvaćanju kvizova:', error);
       }
+    };
+
+    const checkSolvedForAll = async () => {
+      const map = {};
+      for (const q of quizzes.value) {
+        try {
+          const r = await axios.get(`${API_BASE}/quizzes/${q.id}/solved/${user.id}`);
+          map[q.id] = !!r.data?.alreadySolved;
+        } catch (err) {
+          map[q.id] = false; // u sumnji – tretiraj kao neriješeno
+        }
+      }
+      solvedQuizzes.value = map;
     };
 
     const dodajNoviKviz = () => {
       router.push(`/add-quiz?predmet=${encodeURIComponent(predmet)}`);
     };
 
-    const rjesiKviz = (id) => {
+    const otvoriKviz = (id) => {
       router.push(`/quizzes/${id}`);
     };
 
-  
     const removeQuiz = async (quiz) => {
       if (!confirm('Sigurno obrisati ovaj kviz?')) return;
       try {
         await axios.delete(`${API_BASE}/quizzes/${quiz.id}`, {
-         
           data: { profesorId: user?.id }
         });
-       
         quizzes.value = quizzes.value.filter(q => q.id !== quiz.id);
+        // očisti i solved cache
+        const copy = { ...solvedQuizzes.value };
+        delete copy[quiz.id];
+        solvedQuizzes.value = copy;
       } catch (err) {
         console.error('Greška pri brisanju kviza:', err);
         alert('Greška: brisanje nije uspjelo.');
@@ -103,7 +140,7 @@ export default {
 
     onMounted(fetchQuizzes);
 
-    return { quizzes, predmet, rjesiKviz, dodajNoviKviz, isProfesor, removeQuiz };
+    return { quizzes, predmet, isProfesor, solvedQuizzes, dodajNoviKviz, otvoriKviz, removeQuiz };
   }
 };
 </script>
