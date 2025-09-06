@@ -36,7 +36,9 @@ const routes = [
   { path: '/admin/settings', name: 'AdminSettings', component: () => import('../views/AdminSettings.vue') },
   { path: '/add-material', name: 'AddMaterial', component: () => import('../views/AddMaterial.vue') },
   { path: '/chat', name: 'Chat', component: () => import('../views/Chat.vue') },
-  { path: '/quiz-statistics', name: 'Statistika', component: () => import('../views/Statistika.vue') }
+  { path: '/quiz-statistics', name: 'Statistika', component: () => import('../views/Statistika.vue') },
+  { path: '/quiz/:id/stats', name: 'QuizStats', component: () => import('../views/QuizStats.vue') }
+
 ];
 
 const router = createRouter({
@@ -64,3 +66,4 @@ router.beforeEach((to, from, next) => {
 });
 
 export default router;
+
