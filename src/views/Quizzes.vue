@@ -1,21 +1,14 @@
 <template>
   <div class="container my-5">
-    <!-- Natrag -->
     <div class="text-start mb-3">
-      <router-link to="/home" class="btn btn-outline-primary">
-        ⬅ Natrag na početnu stranicu
-      </router-link>
+      <router-link to="/home" class="btn btn-outline-primary">⬅ Natrag na početnu stranicu</router-link>
     </div>
 
     <h2 class="text-center mb-5 text-primary">🧠 Kvizovi po predmetima</h2>
 
     <!-- Popis predmeta -->
     <div v-if="!selectedSubject" class="row g-4">
-      <div
-        v-for="predmet in predmeti"
-        :key="predmet"
-        class="col-12 col-md-6 col-lg-4"
-      >
+      <div v-for="predmet in predmeti" :key="predmet" class="col-12 col-md-6 col-lg-4">
         <div class="card predmet-card shadow h-100" @click="selectSubject(predmet)">
           <div class="card-body text-center d-flex flex-column justify-content-center">
             <h5 class="card-title fw-bold text-secondary">{{ predmet }}</h5>
@@ -28,15 +21,11 @@
     <div v-else>
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="text-success">{{ selectedSubject }}</h3>
-        <div>
-          <button
-            v-if="mozeDodatiKviz"
-            class="btn btn-primary me-2"
-            @click="goToAddQuiz(selectedSubject)"
-          >
-            + Dodaj kviz
-          </button>
-        </div>
+        <button
+          v-if="mozeDodatiKviz"
+          class="btn btn-primary"
+          @click="goToAddQuiz(selectedSubject)"
+        >+ Dodaj kviz</button>
       </div>
 
       <div v-if="quizzes.length === 0" class="alert alert-warning text-center">
@@ -53,7 +42,7 @@
                 <p class="text-muted"><strong>Razred:</strong> {{ quiz.razred }}</p>
               </div>
 
-              <!-- Učenik: Riješi / Pregled ovisno o riješenosti -->
+              <!-- Učenik -->
               <button
                 v-if="!isProfesor"
                 class="btn btn-outline-success mt-3"
@@ -62,14 +51,10 @@
                 {{ solvedQuizzes[quiz.id] ? '👁 Pogledaj riješeni kviz' : '▶ Riješi kviz' }}
               </button>
 
-              <!-- Profesor: Pregled + Obriši -->
+              <!-- Profesor -->
               <div v-else class="d-flex gap-2 mt-3">
-                <button class="btn btn-outline-info" @click="goToQuiz(quiz.id)">
-                  👁 Pregled pitanja
-                </button>
-                <button class="btn btn-outline-danger" @click="removeQuiz(quiz)" title="Obriši kviz">
-                  🗑 Obriši
-                </button>
+                <button class="btn btn-outline-info" @click="goToQuiz(quiz.id)">👁 Pregled pitanja</button>
+                <button class="btn btn-outline-danger" @click="removeQuiz(quiz)" title="Obriši kviz">🗑 Obriši</button>
               </div>
             </div>
           </div>
@@ -82,7 +67,7 @@
 <script>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../lib/api.js'
+import api from '../lib/api.js'  // koristi tvoj lib (bez localhosta)
 
 export default {
   name: 'Quizzes',
@@ -96,10 +81,10 @@ export default {
     ]
 
     const quizzes = ref([])
-    const solvedQuizzes = ref({})
+    const solvedQuizzes = ref({})        // { [quizId]: true/false }
     const selectedSubject = ref(null)
-    const router = useRouter()
 
+    const router = useRouter()
     const user = JSON.parse(localStorage.getItem('user'))
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
     const profesorPredmeti = ref([])
@@ -111,56 +96,47 @@ export default {
       profesorPredmeti.value.includes(selectedSubject.value)
     )
 
-    // ---- API ----
+    // ---- NOVO: dohvat rješenih kvizova u jednom potezu ----
+    async function loadSolvedForUser() {
+      if (!user?.id) {
+        solvedQuizzes.value = {}
+        return
+      }
+      try {
+        const { data, status } = await api.get(`/api/v1/progress/${user.id}`, { validateStatus: () => true })
+        const ids = status >= 200 && status < 300 ? (data?.solvedQuizIds || []) : []
+        const map = {}
+        for (const id of ids) map[id] = true
+        solvedQuizzes.value = map
+      } catch {
+        solvedQuizzes.value = {}
+      }
+    }
+
     async function fetchQuizzesForSubject(predmet) {
       try {
-        const { data } = await api.get(`/quizzes/subject/${encodeURIComponent(predmet)}`)
-        let all = data || []
-        if (!isProfesor.value && razred.value) {
-          all = all.filter(k => k.razred === razred.value)
-        }
-        quizzes.value = all
-        await checkSolvedQuizzes(all.map(q => q.id))
-      } catch (e) {
-        console.error('Greška pri dohvaćanju kvizova:', e)
-      }
-    }
+        const { data, status } = await api.get(`/quizzes/subject/${encodeURIComponent(predmet)}`, { validateStatus: () => true })
+        let list = status >= 200 && status < 300 ? (data || []) : []
+        if (!isProfesor.value && razred.value) list = list.filter(k => k.razred === razred.value)
+        quizzes.value = list
 
-    // Pokuša novu rutu, pa na 404 automatski staru — bez grešaka u konzoli
-    async function getSolvedFlag(quizId) {
-      if (!user?.id) return false
-      try {
-        const r1 = await api.get(`/quizzes/${quizId}/solved/${user.id}`)
-        return !!(r1.data?.alreadySolved || r1.data?.solved)
-      } catch (e) {
-        if (e?.response?.status === 404) {
-          try {
-            const r2 = await api.get(`/solved/${user.id}/${quizId}`)
-            return !!(r2.data?.alreadySolved || r2.data?.solved)
-          } catch {
-            return false
-          }
-        }
-        return false
+        // nakon što znamo koji su kvizovi vidljivi, označi koji su riješeni
+        await loadSolvedForUser()
+      } catch {
+        quizzes.value = []
       }
-    }
-
-    async function checkSolvedQuizzes(quizIds) {
-      const map = {}
-      for (const id of quizIds) {
-        map[id] = await getSolvedFlag(id)
-      }
-      solvedQuizzes.value = map
     }
 
     async function fetchProfesorPredmeti() {
       if (!user?.id) return
       try {
-        const { data } = await api.get(`/profesori/${user.id}`)
-        profesorPredmeti.value = (data?.Subjects || []).map(s => s.naziv)
+        const { data, status } = await api.get(`/profesori/${user.id}`, { validateStatus: () => true })
+        profesorPredmeti.value = status >= 200 && status < 300
+          ? (data?.Subjects || []).map(s => s.naziv)
+          : []
         localStorage.setItem('profesorPredmeti', JSON.stringify(profesorPredmeti.value))
-      } catch (e) {
-        console.error('Greška dohvaćanja predmeta profesora:', e)
+      } catch {
+        profesorPredmeti.value = []
       }
     }
 
@@ -168,11 +144,9 @@ export default {
       selectedSubject.value = predmet
       fetchQuizzesForSubject(predmet)
     }
-
     function goToAddQuiz(predmet) {
       router.push({ name: 'AddQuiz', query: { predmet } })
     }
-
     function goToQuiz(id) {
       router.push(`/quizzes/${id}`)
     }
@@ -180,14 +154,13 @@ export default {
     async function removeQuiz(quiz) {
       if (!isProfesor.value) return
       if (!confirm('Sigurno obrisati ovaj kviz?')) return
-      try {
-        await api.delete(`/quizzes/${quiz.id}`)
+      const res = await api.delete(`/quizzes/${quiz.id}`, { validateStatus: () => true })
+      if (res.status >= 200 && res.status < 300) {
         quizzes.value = quizzes.value.filter(q => q.id !== quiz.id)
         const copy = { ...solvedQuizzes.value }
         delete copy[quiz.id]
         solvedQuizzes.value = copy
-      } catch (e) {
-        console.error('Greška pri brisanju kviza:', e)
+      } else {
         alert('Greška: brisanje nije uspjelo.')
       }
     }
@@ -232,4 +205,5 @@ export default {
   background-color: #f5fcff;
 }
 </style>
+
 
