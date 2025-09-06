@@ -37,7 +37,7 @@ const routes = [
   { path: '/add-material', name: 'AddMaterial', component: () => import('../views/AddMaterial.vue') },
   { path: '/chat', name: 'Chat', component: () => import('../views/Chat.vue') },
   { path: '/quiz-statistics', name: 'Statistika', component: () => import('../views/Statistika.vue') },
-  { path: '/quiz/:id/stats', name: 'QuizStats', component: () => import('../views/QuizStats.vue') }
+ 
 
 ];
 
@@ -66,4 +66,5 @@ router.beforeEach((to, from, next) => {
 });
 
 export default router;
+
 
