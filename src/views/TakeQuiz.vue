@@ -127,13 +127,22 @@
 <script>
 import axios from 'axios';
 import { ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 export default {
   name: 'TakeQuiz',
   setup() {
     const route = useRoute();
-    const quizId = Number(route.params.id);
+    const router = useRouter();
+
+    // --- ID zaštita ---
+    const idParam = route.params.id;
+    const quizId = Number(idParam);
+    if (!Number.isFinite(quizId) || quizId <= 0) {
+      alert('Neispravan ID kviza.');
+      router.replace('/quizzes');
+    }
+
     const quiz = ref(null);
     const odgovori = ref([]);
     const rezultat = ref([]);
@@ -141,77 +150,108 @@ export default {
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-    // ⬇️ baza backenda (bez /api/v1); ako imaš VITE_API_BASE_URL, koristi ga
-    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://nurseconnect-backend-novi.onrender.com';
+    // Baza backenda (ako imaš VITE_API_BASE_URL koristi njega)
+    const API_BASE =
+      import.meta.env.VITE_API_BASE_URL ||
+      'https://nurseconnect-backend-novi.onrender.com';
 
-    // helper: pozovi path; ako 404, probaj sa /api/v1 prefiksom
+    // helper: GET s fallbackom na /api/v1
     async function getWithFallback(path) {
+      const url1 = `${API_BASE}${path}`;
+      console.log('[GET]', url1);
       try {
-        return await axios.get(`${API_BASE}${path}`);
+        return await axios.get(url1);
       } catch (e) {
         if (e?.response?.status === 404) {
-          return await axios.get(`${API_BASE}/api/v1${path}`);
-        }
-        throw e;
-      }
-    }
-    async function postWithFallback(path, body) {
-      try {
-        return await axios.post(`${API_BASE}${path}`, body);
-      } catch (e) {
-        if (e?.response?.status === 404) {
-          return await axios.post(`${API_BASE}/api/v1${path}`, body);
+          const url2 = `${API_BASE}/api/v1${path}`;
+          console.log('[GET fallback]', url2);
+          return await axios.get(url2);
         }
         throw e;
       }
     }
 
-    // mjerimo trajanje i vrijeme po pitanju
+    // helper: POST s fallbackom na /api/v1
+    async function postWithFallback(path, body) {
+      const url1 = `${API_BASE}${path}`;
+      console.log('[POST]', url1, body);
+      try {
+        return await axios.post(url1, body);
+      } catch (e) {
+        if (e?.response?.status === 404) {
+          const url2 = `${API_BASE}/api/v1${path}`;
+          console.log('[POST fallback]', url2, body);
+          return await axios.post(url2, body);
+        }
+        throw e;
+      }
+    }
+
+    // mjerenje trajanja
     const startTime = Date.now();
-    const perQuestionMs = ref([]); // opcionalno: možeš puniti kad otvaraš svako pitanje
+    const perQuestionMs = ref([]); // može ostati prazno; backend prima null
 
     const fetchQuiz = async () => {
       try {
+        // 1) Dohvati kviz
         const q = await getWithFallback(`/quizzes/${quizId}`);
         quiz.value = q.data;
 
-        if (!isProfesor.value) {
-          const solved = await getWithFallback(`/solved/${user.id}/${quizId}`);
-          if (solved.data.solved) {
-            alreadySolved.value = true;
-            rezultat.value = solved.data.rezultat;
-            // prikaži točne odgovore (da profesor vidi pregled; učenik ionako ima solved==true)
-            odgovori.value = quiz.value.pitanja.map(p => p.correct);
-          } else {
-            // inicijaliziraj odgovore
-            odgovori.value = quiz.value.pitanja.map(p => {
-              if (p.type === 'truefalse') return '';
-              if (p.type === 'hotspot') return null;
-              return [];
-            });
+        // 2) Ako je učenik, provjeri je li već rješavao
+        if (!isProfesor.value && user?.id) {
+          try {
+            const solved = await getWithFallback(`/solved/${user.id}/${quizId}`);
+            if (solved.data?.solved) {
+              alreadySolved.value = true;
+              rezultat.value = solved.data.rezultat || [];
+              // pokaži točne odgovore za pregled
+              odgovori.value = (quiz.value.pitanja || []).map(p => p.correct);
+              return;
+            }
+          } catch (e) {
+            // 404 za /solved nije kritičan—samo znači da nema zapisa
+            if (e?.response?.status !== 404) throw e;
           }
         }
+
+        // 3) Inicijaliziraj prazne odgovore
+        odgovori.value = (quiz.value.pitanja || []).map(p => {
+          if (p.type === 'truefalse') return '';
+          if (p.type === 'hotspot') return null;
+          return [];
+        });
       } catch (err) {
+        if (err?.response?.status === 404) {
+          alert('Kviz nije pronađen ili je obrisan.');
+          return router.replace('/quizzes');
+        }
         console.error('Greška pri dohvaćanju kviza:', err);
+        alert('Ne mogu dohvatiti kviz. Pokušaj ponovno.');
+        router.replace('/quizzes');
       }
     };
 
     const submitAnswers = async () => {
       try {
         const durationSec = Math.round((Date.now() - startTime) / 1000);
-        const res = await postWithFallback(`/quizzes/${quizId}/check-answers`, {
+        const body = {
           odgovori: odgovori.value,
-          studentId: user.id,
+          studentId: user?.id,
           durationSec,
           perQuestionMs: perQuestionMs.value?.length ? perQuestionMs.value : null,
-        });
-        rezultat.value = res.data.rezultat;
+        };
+        const res = await postWithFallback(`/quizzes/${quizId}/check-answers`, body);
+        rezultat.value = res.data?.rezultat || [];
         alreadySolved.value = true;
       } catch (err) {
         if (err?.response?.status === 403) {
           alert('❌ Dosegnut je maksimalan broj pokušaja.');
+        } else if (err?.response?.status === 404) {
+          alert('Kviz nije pronađen (možda je obrisan).');
+          router.replace('/quizzes');
         } else {
           console.error('Greška pri slanju odgovora:', err);
+          alert('Ne mogu poslati odgovore.');
         }
       }
     };
@@ -230,7 +270,7 @@ export default {
       odgovori.value[qi] = { x, y };
     };
 
-    const brojTocnih = computed(() => rezultat.value.filter(r => r).length);
+    const brojTocnih = computed(() => rezultat.value.filter(Boolean).length);
     const postotak = computed(() =>
       rezultat.value.length ? Math.round((brojTocnih.value / rezultat.value.length) * 100) : 0
     );
@@ -261,7 +301,6 @@ export default {
   }
 };
 </script>
-
 
 
 
@@ -307,4 +346,5 @@ export default {
 }
 
 </style>
+
 
