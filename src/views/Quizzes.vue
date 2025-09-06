@@ -1,12 +1,15 @@
 <template>
   <div class="container my-5">
+    <!-- Natrag -->
     <div class="text-start mb-3">
-      <router-link to="/home" class="btn btn-outline-primary">⬅ Natrag na početnu stranicu</router-link>
+      <router-link to="/home" class="btn btn-outline-primary">
+        ⬅ Natrag na početnu stranicu
+      </router-link>
     </div>
 
     <h2 class="text-center mb-5 text-primary">🧠 Kvizovi po predmetima</h2>
 
-    <!-- Popis predmeta -->
+    <!-- Odabir predmeta -->
     <div v-if="!selectedSubject" class="row g-4">
       <div v-for="predmet in predmeti" :key="predmet" class="col-12 col-md-6 col-lg-4">
         <div class="card predmet-card shadow h-100" @click="selectSubject(predmet)">
@@ -17,15 +20,19 @@
       </div>
     </div>
 
-    <!-- Kvizovi odabranog predmeta -->
+    <!-- Lista kvizova -->
     <div v-else>
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="text-success">{{ selectedSubject }}</h3>
-        <button
-          v-if="mozeDodatiKviz"
-          class="btn btn-primary"
-          @click="goToAddQuiz(selectedSubject)"
-        >+ Dodaj kviz</button>
+        <div>
+          <button
+            v-if="mozeDodatiKviz"
+            class="btn btn-primary me-2"
+            @click="goToAddQuiz(selectedSubject)"
+          >
+            + Dodaj kviz
+          </button>
+        </div>
       </div>
 
       <div v-if="quizzes.length === 0" class="alert alert-warning text-center">
@@ -53,8 +60,12 @@
 
               <!-- Profesor -->
               <div v-else class="d-flex gap-2 mt-3">
-                <button class="btn btn-outline-info" @click="goToQuiz(quiz.id)">👁 Pregled pitanja</button>
-                <button class="btn btn-outline-danger" @click="removeQuiz(quiz)" title="Obriši kviz">🗑 Obriši</button>
+                <button class="btn btn-outline-info" @click="goToQuiz(quiz.id)">
+                  👁 Pregled pitanja
+                </button>
+                <button class="btn btn-outline-danger" @click="removeQuiz(quiz)" title="Obriši kviz">
+                  🗑 Obriši
+                </button>
               </div>
             </div>
           </div>
@@ -67,7 +78,7 @@
 <script>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../lib/api.js'  // koristi tvoj lib (bez localhosta)
+import api from '../lib/api.js' // ✅ umjesto axios/localhost
 
 export default {
   name: 'Quizzes',
@@ -81,62 +92,61 @@ export default {
     ]
 
     const quizzes = ref([])
-    const solvedQuizzes = ref({})        // { [quizId]: true/false }
+    const solvedQuizzes = ref({})
     const selectedSubject = ref(null)
-
     const router = useRouter()
-    const user = JSON.parse(localStorage.getItem('user'))
+
+    const user = JSON.parse(localStorage.getItem('user') || 'null')
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
     const profesorPredmeti = ref([])
     const razred = ref(user?.razred || null)
 
     const mozeDodatiKviz = computed(() =>
-      isProfesor.value &&
-      selectedSubject.value &&
-      profesorPredmeti.value.includes(selectedSubject.value)
+      isProfesor.value && selectedSubject.value && profesorPredmeti.value.includes(selectedSubject.value)
     )
-
-    // ---- NOVO: dohvat rješenih kvizova u jednom potezu ----
-    async function loadSolvedForUser() {
-      if (!user?.id) {
-        solvedQuizzes.value = {}
-        return
-      }
-      try {
-        const { data, status } = await api.get(`/api/v1/progress/${user.id}`, { validateStatus: () => true })
-        const ids = status >= 200 && status < 300 ? (data?.solvedQuizIds || []) : []
-        const map = {}
-        for (const id of ids) map[id] = true
-        solvedQuizzes.value = map
-      } catch {
-        solvedQuizzes.value = {}
-      }
-    }
 
     async function fetchQuizzesForSubject(predmet) {
       try {
-        const { data, status } = await api.get(`/quizzes/subject/${encodeURIComponent(predmet)}`, { validateStatus: () => true })
-        let list = status >= 200 && status < 300 ? (data || []) : []
-        if (!isProfesor.value && razred.value) list = list.filter(k => k.razred === razred.value)
-        quizzes.value = list
+        const { data } = await api.get(`/quizzes/subject/${encodeURIComponent(predmet)}`)
+        let all = data || []
+        if (!isProfesor.value && razred.value) {
+          all = all.filter(k => k.razred === razred.value)
+        }
+        quizzes.value = all
+        await checkSolvedQuizzes(all.map(q => q.id))
+      } catch (e) {
+        console.error('Greška pri dohvaćanju kvizova:', e)
+      }
+    }
 
-        // nakon što znamo koji su kvizovi vidljivi, označi koji su riješeni
-        await loadSolvedForUser()
-      } catch {
-        quizzes.value = []
+    // ✅ Provjera riješenosti s oba moguća endpointa (glavni + alias)
+    async function checkSolvedQuizzes(quizIds) {
+      solvedQuizzes.value = {}
+      if (!user?.id || isProfesor.value) return
+      for (const id of quizIds) {
+        try {
+          let r
+          try {
+            r = await api.get(`/quizzes/${id}/solved/${user.id}`)
+          } catch {
+            r = await api.get(`/solved/${user.id}/${id}`) // alias fallback
+          }
+          solvedQuizzes.value[id] = !!r?.data?.solved
+        } catch (e) {
+          console.debug('Provjera riješenosti: nema rute ili 404 (ok):', id)
+          solvedQuizzes.value[id] = false
+        }
       }
     }
 
     async function fetchProfesorPredmeti() {
       if (!user?.id) return
       try {
-        const { data, status } = await api.get(`/profesori/${user.id}`, { validateStatus: () => true })
-        profesorPredmeti.value = status >= 200 && status < 300
-          ? (data?.Subjects || []).map(s => s.naziv)
-          : []
+        const { data } = await api.get(`/profesori/${user.id}`)
+        profesorPredmeti.value = (data?.Subjects || []).map(s => s.naziv)
         localStorage.setItem('profesorPredmeti', JSON.stringify(profesorPredmeti.value))
-      } catch {
-        profesorPredmeti.value = []
+      } catch (e) {
+        console.error('Greška pri dohvaćanju predmeta profesora:', e)
       }
     }
 
@@ -144,28 +154,29 @@ export default {
       selectedSubject.value = predmet
       fetchQuizzesForSubject(predmet)
     }
+
     function goToAddQuiz(predmet) {
       router.push({ name: 'AddQuiz', query: { predmet } })
     }
+
     function goToQuiz(id) {
       router.push(`/quizzes/${id}`)
     }
 
+    if (isProfesor.value) fetchProfesorPredmeti()
+
+    // ✅ bez undefined API_BASE, koristi shared api
     async function removeQuiz(quiz) {
       if (!isProfesor.value) return
       if (!confirm('Sigurno obrisati ovaj kviz?')) return
-      const res = await api.delete(`/quizzes/${quiz.id}`, { validateStatus: () => true })
-      if (res.status >= 200 && res.status < 300) {
+      try {
+        await api.delete(`/quizzes/${quiz.id}`)
         quizzes.value = quizzes.value.filter(q => q.id !== quiz.id)
-        const copy = { ...solvedQuizzes.value }
-        delete copy[quiz.id]
-        solvedQuizzes.value = copy
-      } else {
+      } catch (e) {
+        console.error('Greška pri brisanju kviza:', e)
         alert('Greška: brisanje nije uspjelo.')
       }
     }
-
-    if (isProfesor.value) fetchProfesorPredmeti()
 
     return {
       predmeti,
@@ -195,7 +206,6 @@ export default {
   transform: scale(1.03);
   border-color: #0d6efd;
 }
-
 .quiz-card {
   border-radius: 12px;
   transition: 0.3s ease;
@@ -205,5 +215,3 @@ export default {
   background-color: #f5fcff;
 }
 </style>
-
-
