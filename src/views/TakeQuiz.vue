@@ -134,36 +134,56 @@ export default {
   setup() {
     const route = useRoute();
     const quizId = Number(route.params.id);
-
     const quiz = ref(null);
     const odgovori = ref([]);
     const rezultat = ref([]);
     const alreadySolved = ref(false);
-
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
-    const hotspotRadius = 20;
+    // ⬇️ baza backenda (bez /api/v1); ako imaš VITE_API_BASE_URL, koristi ga
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://nurseconnect-backend-novi.onrender.com';
 
-    // === MJERENJE VREMENA KVIZA (novo) ============================
-    // startamo brojač čim se komponenta učita
-    const startedAt = Date.now();
-    // ===============================================================
+    // helper: pozovi path; ako 404, probaj sa /api/v1 prefiksom
+    async function getWithFallback(path) {
+      try {
+        return await axios.get(`${API_BASE}${path}`);
+      } catch (e) {
+        if (e?.response?.status === 404) {
+          return await axios.get(`${API_BASE}/api/v1${path}`);
+        }
+        throw e;
+      }
+    }
+    async function postWithFallback(path, body) {
+      try {
+        return await axios.post(`${API_BASE}${path}`, body);
+      } catch (e) {
+        if (e?.response?.status === 404) {
+          return await axios.post(`${API_BASE}/api/v1${path}`, body);
+        }
+        throw e;
+      }
+    }
+
+    // mjerimo trajanje i vrijeme po pitanju
+    const startTime = Date.now();
+    const perQuestionMs = ref([]); // opcionalno: možeš puniti kad otvaraš svako pitanje
 
     const fetchQuiz = async () => {
       try {
-        const q = await axios.get(`http://localhost:3001/quizzes/${quizId}`);
+        const q = await getWithFallback(`/quizzes/${quizId}`);
         quiz.value = q.data;
 
         if (!isProfesor.value) {
-          const solved = await axios.get(`http://localhost:3001/solved/${user.id}/${quizId}`);
+          const solved = await getWithFallback(`/solved/${user.id}/${quizId}`);
           if (solved.data.solved) {
             alreadySolved.value = true;
             rezultat.value = solved.data.rezultat;
-            // prikaži točne odgovore (readonly)
+            // prikaži točne odgovore (da profesor vidi pregled; učenik ionako ima solved==true)
             odgovori.value = quiz.value.pitanja.map(p => p.correct);
           } else {
-            // inicijalni odgovori
+            // inicijaliziraj odgovore
             odgovori.value = quiz.value.pitanja.map(p => {
               if (p.type === 'truefalse') return '';
               if (p.type === 'hotspot') return null;
@@ -178,20 +198,17 @@ export default {
 
     const submitAnswers = async () => {
       try {
-        // === IZRAČUN TRAJANJA (novo) ===============================
-        const durationSec = Math.round((Date.now() - startedAt) / 1000);
-        // ===========================================================
-
-        const res = await axios.post(`http://localhost:3001/quizzes/${quizId}/check-answers`, {
+        const durationSec = Math.round((Date.now() - startTime) / 1000);
+        const res = await postWithFallback(`/quizzes/${quizId}/check-answers`, {
           odgovori: odgovori.value,
           studentId: user.id,
-          durationSec,          // <<-- sada backend dobiva trajanje
-          // perQuestionMs: []   // opcionalno; po pitanjima, ako ikad budeš mjerio
+          durationSec,
+          perQuestionMs: perQuestionMs.value?.length ? perQuestionMs.value : null,
         });
         rezultat.value = res.data.rezultat;
         alreadySolved.value = true;
       } catch (err) {
-        if (err.response && err.response.status === 403) {
+        if (err?.response?.status === 403) {
           alert('❌ Dosegnut je maksimalan broj pokušaja.');
         } else {
           console.error('Greška pri slanju odgovora:', err);
@@ -215,16 +232,15 @@ export default {
 
     const brojTocnih = computed(() => rezultat.value.filter(r => r).length);
     const postotak = computed(() =>
-      rezultat.value.length
-        ? Math.round((brojTocnih.value / rezultat.value.length) * 100)
-        : 0
+      rezultat.value.length ? Math.round((brojTocnih.value / rezultat.value.length) * 100) : 0
     );
 
     const formatOdgovor = (odg) => {
       if (Array.isArray(odg)) return odg.join(', ');
-      if (typeof odg === 'object' && odg?.x != null && odg?.y != null)
+      if (odg && typeof odg === 'object' && odg.x != null && odg.y != null) {
         return `(${Math.round(odg.x)}, ${Math.round(odg.y)})`;
-      return odg;
+      }
+      return odg ?? '';
     };
 
     onMounted(fetchQuiz);
@@ -241,11 +257,11 @@ export default {
       isProfesor,
       toggleImageChoice,
       handleHotspotClick,
-      hotspotRadius
     };
   }
 };
 </script>
+
 
 
 
@@ -291,3 +307,4 @@ export default {
 }
 
 </style>
+
