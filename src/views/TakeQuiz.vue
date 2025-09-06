@@ -134,13 +134,21 @@ export default {
   setup() {
     const route = useRoute();
     const quizId = Number(route.params.id);
+
     const quiz = ref(null);
     const odgovori = ref([]);
     const rezultat = ref([]);
     const alreadySolved = ref(false);
+
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
+
     const hotspotRadius = 20;
+
+    // === MJERENJE VREMENA KVIZA (novo) ============================
+    // startamo brojač čim se komponenta učita
+    const startedAt = Date.now();
+    // ===============================================================
 
     const fetchQuiz = async () => {
       try {
@@ -152,8 +160,10 @@ export default {
           if (solved.data.solved) {
             alreadySolved.value = true;
             rezultat.value = solved.data.rezultat;
+            // prikaži točne odgovore (readonly)
             odgovori.value = quiz.value.pitanja.map(p => p.correct);
           } else {
+            // inicijalni odgovori
             odgovori.value = quiz.value.pitanja.map(p => {
               if (p.type === 'truefalse') return '';
               if (p.type === 'hotspot') return null;
@@ -168,9 +178,15 @@ export default {
 
     const submitAnswers = async () => {
       try {
+        // === IZRAČUN TRAJANJA (novo) ===============================
+        const durationSec = Math.round((Date.now() - startedAt) / 1000);
+        // ===========================================================
+
         const res = await axios.post(`http://localhost:3001/quizzes/${quizId}/check-answers`, {
           odgovori: odgovori.value,
-          studentId: user.id
+          studentId: user.id,
+          durationSec,          // <<-- sada backend dobiva trajanje
+          // perQuestionMs: []   // opcionalno; po pitanjima, ako ikad budeš mjerio
         });
         rezultat.value = res.data.rezultat;
         alreadySolved.value = true;
@@ -273,4 +289,5 @@ export default {
   border-radius: 10px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
+
 </style>
