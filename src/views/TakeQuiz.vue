@@ -5,15 +5,14 @@
     </div>
 
     <div v-if="loading" class="alert alert-info">Učitavanje…</div>
-
     <div v-else-if="!quiz" class="alert alert-danger">Kviz nije pronađen.</div>
 
     <div v-else class="card shadow p-4">
       <h2 class="mb-4 text-primary">{{ quiz.naziv }}</h2>
 
-      <!-- 👨‍🏫 Pregled za profesore -->
-      <div v-if="isProfesor">
-        <h4 class="text-info">👨‍🏫 Pregled kviza za profesore</h4>
+      <!-- 👨‍🏫 PROFESOR: samo pregled -->
+      <div v-if="isProfesor || mode === 'preview'">
+        <h4 class="text-info">👨‍🏫 Pregled kviza</h4>
         <div v-for="(p, i) in quiz.pitanja" :key="qKey(p, i)" class="mb-4">
           <h6 class="fw-bold">{{ i + 1 }}. {{ p.question }}</h6>
 
@@ -27,7 +26,7 @@
               <img v-for="opt in (p.options||[])" :key="opt.value ?? opt.url"
                    :src="opt.url" class="img-thumbnail" style="width:100px;" />
             </div>
-            <p>✅ Točne slike: {{ formatOdgovor(p.correct) }}</p>
+            <p class="mt-2">✅ Točne slike: {{ formatOdgovor(p.correct) }}</p>
           </div>
 
           <div v-else-if="p.image">
@@ -45,9 +44,9 @@
         </div>
       </div>
 
-    
-      <div v-else-if="alreadySolved && rezultat.length">
-        <h4 class="text-success">✅ Već si riješio ovaj kviz!</h4>
+      <!-- ✅ UČENIK REVIEW (već riješio ili otvoren u ?mode=review) -->
+      <div v-else-if="alreadySolved || mode === 'review'">
+        <h4 class="text-success">✅ Riješeni kviz</h4>
         <p class="fw-bold">
           Točno odgovoreno: {{ brojTocnih }}/{{ rezultat.length }} ({{ postotak }}%)
         </p>
@@ -71,17 +70,19 @@
         </div>
       </div>
 
+      <!-- 🧠 UČENIK RJEŠAVA -->
       <form v-else @submit.prevent="submitAnswers">
         <div v-for="(p, i) in quiz.pitanja" :key="qKey(p, i)" class="mb-4 border rounded p-3">
           <p class="fw-bold">{{ i + 1 }}. {{ p.question }}</p>
 
+          <!-- MULTIPLE / IMAGE: checkbox + ARRAY v-model -->
           <div v-if="p.type === 'multiple' || p.type === 'image'">
             <label class="form-check" v-for="(opt, oi) in (p.options || [])" :key="optKey(opt, oi)">
               <input
                 class="form-check-input"
                 type="checkbox"
-                v-model="odgovori[i]"               
-                :value="optKey(opt, oi)"            
+                v-model="odgovori[i]"               <!-- ⬅️ ARRAY per pitanje -->
+                :value="optKey(opt, oi)"             <!-- ⬅️ stabilna vrijednost -->
               />
               <span class="form-check-label">
                 {{ opt.text ?? opt.tekst ?? opt }}
@@ -89,6 +90,7 @@
             </label>
           </div>
 
+          <!-- TRUE/FALSE: radio + jedinstveni name -->
           <div v-else-if="p.type === 'truefalse'">
             <label class="form-check">
               <input
@@ -112,6 +114,7 @@
             </label>
           </div>
 
+          <!-- IMAGE-CHOICE: klik na sliku -> checkbox array -->
           <div v-else-if="p.type === 'image-choice'">
             <div class="d-flex gap-2 flex-wrap">
               <img
@@ -126,6 +129,7 @@
             </div>
           </div>
 
+          <!-- HOTSPOT: spremi klik koordinate -->
           <div v-else-if="p.type === 'hotspot' && p.image">
             <div class="position-relative d-inline-block" @click="handleHotspotClick($event, i)">
               <img :src="p.image" class="img-fluid" style="max-width:500px; cursor:crosshair;" />
@@ -164,15 +168,17 @@ export default {
     const router = useRouter()
     const quizId = Number(route.params.id)
 
+    const mode = computed(() => route.query.mode || 'solve') // 'solve' | 'review' | 'preview'
+    const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+
     const quiz = ref(null)
     const loading = ref(true)
 
-    const odgovori = ref([])    
-    const rezultat = ref([])    
+    // per pitanje: [] (multiple/image/image-choice), 'T'/'N' (TF), {x,y} (hotspot)
+    const odgovori = ref([])
+    const rezultat = ref([]) // bool niz iz check-answers
     const alreadySolved = ref(false)
-
-    const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
 
     const hotspotRadius = 20
     const startedAt = Date.now()
@@ -185,13 +191,31 @@ export default {
     const qKey = (q, i) => String(q.id ?? `i${i}`)
     const optKey = (opt, i) => opt?.value ?? opt?.id ?? opt ?? i
 
+    // --- helperi za rute: prvo pokušaj /api/v1, pa legacy bez prefiksa ---
+    async function getEither(v1Path, legacyPath) {
+      try {
+        return await api.get(v1Path)
+      } catch (e) {
+        if (e?.response?.status === 404) return await api.get(legacyPath)
+        throw e
+      }
+    }
+    async function postEither(v1Path, legacyPath, body) {
+      try {
+        return await api.post(v1Path, body)
+      } catch (e) {
+        if (e?.response?.status === 404) return await api.post(legacyPath, body)
+        throw e
+      }
+    }
+
     async function fetchQuiz() {
       try {
-       
-        const q = await api.get(`/api/v1/quizzes/${quizId}`)
+        // 1) dohvati kviz
+        const q = await getEither(`/api/v1/quizzes/${quizId}`, `/quizzes/${quizId}`)
         quiz.value = q.data
 
-        
+        // 2) inicijaliziraj modele odgovora
         odgovori.value = quiz.value.pitanja.map((p) => {
           if (p.type === 'multiple' || p.type === 'image' || p.type === 'image-choice') return []
           if (p.type === 'truefalse') return null
@@ -199,31 +223,43 @@ export default {
           return null
         })
 
-        
-        if (isProfesor.value) return
+        // 3) profesor nema rješavanje (preview samo)
+        if (isProfesor.value || mode.value === 'preview') return
 
-      
+        // 4) provjeri je li kviz već riješen
         try {
           let r
           try {
-            r = await api.get(`/api/v1/quizzes/${quizId}/solved/${user.id}`)
+            r = await getEither(
+              `/api/v1/quizzes/${quizId}/solved/${user.id}`,
+              `/quizzes/${quizId}/solved/${user.id}`
+            )
           } catch {
-            r = await api.get(`/api/v1/solved/${user.id}/${quizId}`)
+            r = await getEither(
+              `/api/v1/solved/${user.id}/${quizId}`,
+              `/solved/${user.id}/${quizId}`
+            )
           }
           if (r?.data?.solved && Array.isArray(r.data.rezultat)) {
             alreadySolved.value = true
             rezultat.value = r.data.rezultat
-          
             if (Array.isArray(r.data.odgovori)) {
               odgovori.value = r.data.odgovori
             } else {
-             
+              // fallback: pokaži točne
               odgovori.value = quiz.value.pitanja.map(p => p.correct)
             }
+          } else if (mode.value === 'review') {
+            // ako je ručno otvoren review, pokušaj dohvatiti vlastite odgovore ako backend ima rutu
+            try {
+              const my = await getEither(
+                `/api/v1/quizzes/${quizId}/my-answers`,
+                `/quizzes/${quizId}/my-answers`
+              )
+              if (Array.isArray(my.data?.answers)) odgovori.value = my.data.answers
+            } catch { /* ignore */ }
           }
-        } catch {
-          
-        }
+        } catch { /* ignore */ }
       } catch (err) {
         console.error('Greška pri dohvaćanju kviza:', err)
       } finally {
@@ -233,15 +269,17 @@ export default {
 
     async function submitAnswers() {
       try {
-        if (isProfesor.value) return 
-       
-        const check = await api.post(`/api/v1/quizzes/${quizId}/check-answers`, {
-          odgovori: odgovori.value,
-          studentId: user.id
-        })
+        if (isProfesor.value || mode.value !== 'solve') return // sigurnosno
+
+        // 1) provjera odgovora
+        const check = await postEither(
+          `/api/v1/quizzes/${quizId}/check-answers`,
+          `/quizzes/${quizId}/check-answers`,
+          { odgovori: odgovori.value, studentId: user.id }
+        )
         rezultat.value = check.data?.rezultat || []
 
-        
+        // 2) spremi rezultat za statistiku (result/total/trajanje)
         const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
         const payload = {
           studentId: user.id,
@@ -250,15 +288,19 @@ export default {
           durationSec
         }
         try {
-          await api.post(`/api/v1/quizzes/${quizId}/spremi-rezultat`, payload)
+          await postEither(
+            `/api/v1/quizzes/${quizId}/spremi-rezultat`,
+            `/quizzes/${quizId}/spremi-rezultat`,
+            payload
+          )
         } catch (e) {
-         
-          console.debug('Spremanje rezultata nije uspjelo (OK ako ruta ne postoji):', e?.response?.status)
+          console.debug('Spremanje rezultata nije uspjelo (OK ako nema rute):', e?.response?.status)
         }
 
-        
+        // 3) prikaži review
         alreadySolved.value = true
-        
+        // ili redirect na review:
+        // router.replace({ path: `/quizzes/${quizId}`, query: { mode: 'review' } })
       } catch (err) {
         if (err?.response?.status === 403) {
           alert('❌ Dosegnut je maksimalan broj pokušaja.')
@@ -295,26 +337,16 @@ export default {
     onMounted(fetchQuiz)
 
     return {
-      quiz,
-      loading,
-      isProfesor,
-
-      odgovori,
-      rezultat,
-      alreadySolved,
-
-      brojTocnih,
-      postotak,
-
-      submitAnswers,
-      toggleImageChoice,
-      handleHotspotClick,
-
+      // state
+      quiz, loading, isProfesor, mode,
+      odgovori, rezultat, alreadySolved,
+      // computed
+      brojTocnih, postotak,
+      // ui
+      submitAnswers, toggleImageChoice, handleHotspotClick,
       hotspotRadius,
-
-      qKey,
-      optKey,
-      formatOdgovor
+      // helpers for template
+      qKey, optKey, formatOdgovor
     }
   }
 }
@@ -364,4 +396,5 @@ export default {
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 </style>
+
 
