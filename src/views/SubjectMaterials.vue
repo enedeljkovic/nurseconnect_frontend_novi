@@ -248,7 +248,8 @@ async function downloadAndMarkRead(m) {
       alert('Nema URL-a za preuzimanje.')
       return
     }
-    window.open(url, '_blank')  
+   const backend = (api?.defaults?.baseURL || '').replace(/\/+$/, '')
+window.open(`${backend}/download/material/${m.id}`, '_blank') 
   } catch (err) {
     console.error('Greška pri označavanju pročitanog materijala:', err)
   }
@@ -428,6 +429,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
