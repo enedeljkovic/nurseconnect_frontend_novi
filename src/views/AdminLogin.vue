@@ -6,19 +6,46 @@
       <form @submit.prevent="handleAdminLogin">
         <div class="form-group">
           <label for="email">Email</label>
-          <input v-model="email" type="email" id="email" required placeholder="Unesi admin email" />
+          <input
+            v-model="email"
+            type="email"
+            id="email"
+            required
+            placeholder="Unesi admin email"
+            :disabled="isLoading"
+            autocomplete="username"
+          />
         </div>
 
         <div class="form-group">
           <label for="password">Lozinka</label>
-          <input v-model="password" type="password" id="password" required placeholder="Unesi lozinku" />
+          <input
+            v-model="password"
+            type="password"
+            id="password"
+            required
+            placeholder="Unesi lozinku"
+            :disabled="isLoading"
+            autocomplete="current-password"
+          />
         </div>
 
-        <button type="submit">Prijavi se kao admin</button>
+        <button type="submit" :disabled="isLoading">
+          <span v-if="!isLoading">Prijavi se kao admin</span>
+          <span v-else>Prijava u tijeku…</span>
+        </button>
         <p v-if="error" class="error-msg">{{ error }}</p>
       </form>
 
-      <p class="back-to-login" @click="goBack">⬅ Natrag na login</p>
+      <p class="back-to-login" @click="!isLoading && goBack()">⬅ Natrag na login</p>
+    </div>
+
+    <!-- Loader overlay -->
+    <div v-if="isLoading" class="nc-fullscreen-loader" role="alert" aria-busy="true">
+      <div class="nc-loader-box">
+        <div class="nc-spinner" aria-hidden="true"></div>
+        <div class="nc-loader-text">Pričekajte… prijava u tijeku</div>
+      </div>
     </div>
   </div>
 </template>
@@ -34,10 +61,15 @@ export default {
     const email = ref('');
     const password = ref('');
     const error = ref('');
+    const isLoading = ref(false);
     const router = useRouter();
 
     const handleAdminLogin = async () => {
+      if (isLoading.value) return;
       error.value = '';
+      isLoading.value = true;
+      document.documentElement.style.cursor = 'wait';
+
       try {
         const res = await axios.post('http://localhost:3001/admin/login', {
           email: email.value,
@@ -46,11 +78,14 @@ export default {
 
         const admin = res.data.admin;
         localStorage.setItem('user', JSON.stringify({ id: 'admin', role: 'admin' }));
-localStorage.setItem('adminToken', res.data.token);
+        localStorage.setItem('adminToken', res.data.token);
 
         router.push('/admin-panel');
       } catch (err) {
         error.value = err.response?.data?.error || 'Greška prilikom prijave.';
+      } finally {
+        isLoading.value = false;
+        document.documentElement.style.cursor = '';
       }
     };
 
@@ -63,7 +98,8 @@ localStorage.setItem('adminToken', res.data.token);
       password,
       handleAdminLogin,
       error,
-      goBack
+      goBack,
+      isLoading
     };
   }
 };
@@ -143,4 +179,31 @@ button:hover {
 .back-to-login:hover {
   color: #005fa3;
 }
+
+/* Loader styles */
+.nc-fullscreen-loader{
+  position: fixed; inset: 0;
+  background: rgba(255,255,255,.85);
+  backdrop-filter: blur(2px);
+  display: grid; place-items: center;
+  z-index: 2000;
+}
+.nc-loader-box{
+  background: #fff;
+  padding: 20px 24px;
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.12);
+  display: flex; align-items: center; gap: 12px;
+}
+.nc-spinner{
+  width: 26px; height: 26px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #0d6efd;
+  border-radius: 50%;
+  animation: ncspin .8s linear infinite;
+}
+.nc-loader-text{
+  font-weight: 600; color: #0d6efd;
+}
+@keyframes ncspin { to { transform: rotate(360deg); } }
 </style>
