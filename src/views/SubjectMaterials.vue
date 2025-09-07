@@ -280,13 +280,16 @@ function onFile(e){
 
 async function saveEdit(){
   try{
-    // (opcionalno) upload fajla – ostavljam legacy /upload
+    // upload fajla (Cloudinary) → dobijamo fileUrl + publicId
     let fileUrl = editItem.value.fileUrl || null
+    let cloudinaryPublicId = editItem.value.cloudinaryPublicId || null   // ⬅️ NOVO
+
     if (editForm.value.file){
       const fd = new FormData()
       fd.append('file', editForm.value.file)
       const up = await postEither('/api/v1/upload', '/upload', fd)
       fileUrl = up.data.fileUrl || fileUrl
+      cloudinaryPublicId = up.data.publicId || cloudinaryPublicId        // ⬅️ NOVO
     }
 
     const payload = {
@@ -294,6 +297,7 @@ async function saveEdit(){
       opis: editForm.value.opis,
       imageUrl: editForm.value.imageUrl || null,
       fileUrl,
+      cloudinaryPublicId,                                                // ⬅️ NOVO
       razred: editForm.value.razred || editItem.value.razred,
     }
 
@@ -322,9 +326,6 @@ watch(() => route.params.predmet, v => {
   checkDozvola().catch(console.error)
 })
 </script>
-
-
-
 
 
 
@@ -425,6 +426,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
