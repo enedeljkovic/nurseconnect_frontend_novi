@@ -63,7 +63,13 @@
                 <button class="btn btn-outline-info" @click="openQuiz(quiz, 'preview')">
                   👁 Pregled pitanja
                 </button>
-                <button class="btn btn-outline-danger" @click="removeQuiz(quiz)" title="Obriši kviz">
+                <!-- 🛡 Prikaži „Obriši” samo ako profesor ima pravo -->
+                <button
+                  v-if="canDeleteQuiz(quiz)"
+                  class="btn btn-outline-danger"
+                  @click="removeQuiz(quiz)"
+                  title="Obriši kviz"
+                >
                   🗑 Obriši
                 </button>
               </div>
@@ -132,7 +138,7 @@ export default {
       }
     }
 
-    // ✅ NOVO: masovno dohvaćanje riješenih preko /progress/:studentId
+    // ✅ masovno dohvaćanje riješenih preko /progress/:studentId
     async function checkSolvedForStudent(quizIds) {
       solvedQuizzes.value = {}
       if (!user?.id || isProfesor.value) return
@@ -140,23 +146,21 @@ export default {
       try {
         const { data } = await getEither(
           `/api/v1/progress/${user.id}`,
-          `/api/v1/progress/${user.id}` // imaš samo v1, ali ostavljam format
+          `/api/v1/progress/${user.id}` // ako nema legacy, ostaje isto
         )
         const solvedIds = new Set(data?.solvedQuizIds || [])
         for (const id of quizIds) {
           solvedQuizzes.value[id] = solvedIds.has(id)
         }
-        // fallback: ako ništa nije vraćeno, probaj stare per-kviz rute
         if ([...solvedIds].length === 0) {
           await fallbackPerQuizSolved(quizIds)
         }
-      } catch (e) {
-        // ako progress nije dostupan, per-kviz fallback
+      } catch {
         await fallbackPerQuizSolved(quizIds)
       }
     }
 
-    // ✅ fallback na stare rute /quizzes/:id/solved/:studentId i /solved/:studentId/:id
+    // ✅ fallback per-kviz rute
     async function fallbackPerQuizSolved(quizIds) {
       for (const id of quizIds) {
         try {
@@ -202,21 +206,35 @@ export default {
       router.push({ name: 'AddQuiz', query: { predmet } })
     }
 
-    // ✅ otvaranje kviza s dodatnim „safety checkom” za učenika
+    // 🛡️ može li ovaj profesor brisati konkretni kviz?
+    function canDeleteQuiz(quiz) {
+      const u = user || {}
+      const ownerOk =
+        Number(quiz.profesorId) === Number(u?.id) ||
+        Number(quiz.ownerId) === Number(u?.id)
+
+      // naziv predmeta može biti na više polja — pokrij sve varijante
+      const subjectName = quiz.predmet || quiz.subject || quiz.nazivPredmeta || selectedSubject.value
+      const subjectOk =
+        !!subjectName &&
+        Array.isArray(profesorPredmeti.value) &&
+        profesorPredmeti.value.includes(subjectName)
+
+      return isProfesor.value && (ownerOk || subjectOk)
+    }
+
+    // ✅ otvaranje kviza
     async function openQuiz(quiz, forceMode = null) {
-      // Profesor – uvijek preview
       if (isProfesor.value || forceMode === 'preview') {
         router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'preview' } })
         return
       }
 
-      // ako već znamo da je riješen → review
       if (solvedQuizzes.value[quiz.id]) {
         router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'review' } })
         return
       }
 
-      // brzi check na /progress (kako gumb ne bi lagao ni u rubnim slučajevima)
       try {
         const { data } = await getEither(
           `/api/v1/progress/${user.id}`,
@@ -228,9 +246,8 @@ export default {
           router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'review' } })
           return
         }
-      } catch { /* ignoriši – idemo na solve */ }
+      } catch { /* ignore */ }
 
-      // inače – rješavanje
       router.push({ path: `/quizzes/${quiz.id}` })
     }
 
@@ -238,13 +255,17 @@ export default {
 
     async function removeQuiz(quiz) {
       if (!isProfesor.value) return
+      if (!canDeleteQuiz(quiz)) {
+        alert('Nemaš pravo brisati ovaj kviz.')
+        return
+      }
       if (!confirm('Sigurno obrisati ovaj kviz?')) return
       try {
         await getEither(
           `/api/v1/quizzes/${quiz.id}`,
           `/quizzes/${quiz.id}`
-        ) // provjera postojanja (opcionalno)
-        await api.delete(`/quizzes/${quiz.id}`) // legacy delete ako koristiš bez v1
+        ) // provjera/alias
+        await api.delete(`/quizzes/${quiz.id}`) // legacy DELETE; koristi v1 ako je dostupan
         quizzes.value = quizzes.value.filter(q => q.id !== quiz.id)
       } catch (e) {
         console.error('Greška pri brisanju kviza:', e)
@@ -262,7 +283,8 @@ export default {
       selectSubject,
       goToAddQuiz,
       openQuiz,
-      removeQuiz
+      removeQuiz,
+      canDeleteQuiz
     }
   }
 }
@@ -289,3 +311,4 @@ export default {
   background-color: #f5fcff;
 }
 </style>
+
