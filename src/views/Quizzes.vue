@@ -9,7 +9,7 @@
 
     <h2 class="text-center mb-5 text-primary">🧠 Kvizovi po predmetima</h2>
 
- 
+    <!-- Odabir predmeta -->
     <div v-if="!selectedSubject" class="row g-4">
       <div v-for="predmet in predmeti" :key="predmet" class="col-12 col-md-6 col-lg-4">
         <div class="card predmet-card shadow h-100" @click="selectSubject(predmet)">
@@ -20,7 +20,7 @@
       </div>
     </div>
 
- 
+    <!-- Lista kvizova -->
     <div v-else>
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="text-success">{{ selectedSubject }}</h3>
@@ -49,7 +49,7 @@
                 <p class="text-muted"><strong>Razred:</strong> {{ quiz.razred }}</p>
               </div>
 
-              
+              <!-- Učenik -->
               <button
                 v-if="!isProfesor"
                 class="btn btn-outline-success mt-3"
@@ -58,7 +58,7 @@
                 {{ solvedQuizzes[quiz.id] ? '👁 Pogledaj riješeni kviz' : '▶ Riješi kviz' }}
               </button>
 
-            
+              <!-- Profesor -->
               <div v-else class="d-flex gap-2 mt-3">
                 <button class="btn btn-outline-info" @click="openQuiz(quiz, 'preview')">
                   👁 Pregled pitanja
@@ -92,7 +92,7 @@ export default {
     ]
 
     const quizzes = ref([])
-    const solvedQuizzes = ref({})
+    const solvedQuizzes = ref({}) // { [quizId]: true }
     const selectedSubject = ref(null)
     const router = useRouter()
 
@@ -105,31 +105,72 @@ export default {
       isProfesor.value && selectedSubject.value && profesorPredmeti.value.includes(selectedSubject.value)
     )
 
+    // ✅ helper: probaj /api/v1 pa legacy
+    async function getEither(v1Path, legacyPath) {
+      try {
+        return await api.get(v1Path)
+      } catch (e) {
+        if (e?.response?.status === 404) return await api.get(legacyPath)
+        throw e
+      }
+    }
+
     async function fetchQuizzesForSubject(predmet) {
       try {
-        const { data } = await api.get(`/quizzes/subject/${encodeURIComponent(predmet)}`)
+        const { data } = await getEither(
+          `/api/v1/quizzes/subject/${encodeURIComponent(predmet)}`,
+          `/quizzes/subject/${encodeURIComponent(predmet)}`
+        )
         let all = data || []
         if (!isProfesor.value && razred.value) {
           all = all.filter(k => k.razred === razred.value)
         }
         quizzes.value = all
-        await checkSolvedQuizzes(all.map(q => q.id))
+        await checkSolvedForStudent(all.map(q => q.id)) // ✅ punimo mapu riješenih
       } catch (e) {
         console.error('Greška pri dohvaćanju kvizova:', e)
       }
     }
 
-    
-    async function checkSolvedQuizzes(quizIds) {
+    // ✅ NOVO: masovno dohvaćanje riješenih preko /progress/:studentId
+    async function checkSolvedForStudent(quizIds) {
       solvedQuizzes.value = {}
       if (!user?.id || isProfesor.value) return
+
+      try {
+        const { data } = await getEither(
+          `/api/v1/progress/${user.id}`,
+          `/api/v1/progress/${user.id}` // imaš samo v1, ali ostavljam format
+        )
+        const solvedIds = new Set(data?.solvedQuizIds || [])
+        for (const id of quizIds) {
+          solvedQuizzes.value[id] = solvedIds.has(id)
+        }
+        // fallback: ako ništa nije vraćeno, probaj stare per-kviz rute
+        if ([...solvedIds].length === 0) {
+          await fallbackPerQuizSolved(quizIds)
+        }
+      } catch (e) {
+        // ako progress nije dostupan, per-kviz fallback
+        await fallbackPerQuizSolved(quizIds)
+      }
+    }
+
+    // ✅ fallback na stare rute /quizzes/:id/solved/:studentId i /solved/:studentId/:id
+    async function fallbackPerQuizSolved(quizIds) {
       for (const id of quizIds) {
         try {
           let r
           try {
-            r = await api.get(`/quizzes/${id}/solved/${user.id}`)
+            r = await getEither(
+              `/api/v1/quizzes/${id}/solved/${user.id}`,
+              `/quizzes/${id}/solved/${user.id}`
+            )
           } catch {
-            r = await api.get(`/solved/${user.id}/${id}`)
+            r = await getEither(
+              `/api/v1/solved/${user.id}/${id}`,
+              `/solved/${user.id}/${id}`
+            )
           }
           solvedQuizzes.value[id] = !!r?.data?.solved
         } catch {
@@ -141,7 +182,10 @@ export default {
     async function fetchProfesorPredmeti() {
       if (!user?.id) return
       try {
-        const { data } = await api.get(`/profesori/${user.id}`)
+        const { data } = await getEither(
+          `/api/v1/profesori/${user.id}`,
+          `/profesori/${user.id}`
+        )
         profesorPredmeti.value = (data?.Subjects || []).map(s => s.naziv)
         localStorage.setItem('profesorPredmeti', JSON.stringify(profesorPredmeti.value))
       } catch (e) {
@@ -158,19 +202,36 @@ export default {
       router.push({ name: 'AddQuiz', query: { predmet } })
     }
 
-   
-    function openQuiz(quiz, forceMode = null) {
-     
+    // ✅ otvaranje kviza s dodatnim „safety checkom” za učenika
+    async function openQuiz(quiz, forceMode = null) {
+      // Profesor – uvijek preview
       if (isProfesor.value || forceMode === 'preview') {
         router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'preview' } })
         return
       }
-     
+
+      // ako već znamo da je riješen → review
       if (solvedQuizzes.value[quiz.id]) {
         router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'review' } })
-      } else {
-        router.push({ path: `/quizzes/${quiz.id}` })
+        return
       }
+
+      // brzi check na /progress (kako gumb ne bi lagao ni u rubnim slučajevima)
+      try {
+        const { data } = await getEither(
+          `/api/v1/progress/${user.id}`,
+          `/api/v1/progress/${user.id}`
+        )
+        const solvedIds = new Set(data?.solvedQuizIds || [])
+        if (solvedIds.has(quiz.id)) {
+          solvedQuizzes.value[quiz.id] = true
+          router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'review' } })
+          return
+        }
+      } catch { /* ignoriši – idemo na solve */ }
+
+      // inače – rješavanje
+      router.push({ path: `/quizzes/${quiz.id}` })
     }
 
     if (isProfesor.value) fetchProfesorPredmeti()
@@ -179,7 +240,11 @@ export default {
       if (!isProfesor.value) return
       if (!confirm('Sigurno obrisati ovaj kviz?')) return
       try {
-        await api.delete(`/quizzes/${quiz.id}`)
+        await getEither(
+          `/api/v1/quizzes/${quiz.id}`,
+          `/quizzes/${quiz.id}`
+        ) // provjera postojanja (opcionalno)
+        await api.delete(`/quizzes/${quiz.id}`) // legacy delete ako koristiš bez v1
         quizzes.value = quizzes.value.filter(q => q.id !== quiz.id)
       } catch (e) {
         console.error('Greška pri brisanju kviza:', e)
