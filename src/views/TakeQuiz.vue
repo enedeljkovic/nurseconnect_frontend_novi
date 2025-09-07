@@ -81,8 +81,8 @@
               <input
                 class="form-check-input"
                 type="checkbox"
-                v-model="odgovori[i]"               <!-- ⬅️ ARRAY per pitanje -->
-                :value="optKey(opt, oi)"             <!-- ⬅️ stabilna vrijednost -->
+                v-model="odgovori[i]"               
+                :value="optKey(opt, oi)"            
               />
               <span class="form-check-label">
                 {{ opt.text ?? opt.tekst ?? opt }}
@@ -396,5 +396,6 @@ export default {
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 </style>
+
 
 
