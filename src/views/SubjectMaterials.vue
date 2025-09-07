@@ -144,19 +144,46 @@ const user = JSON.parse(localStorage.getItem('user') || '{}')
 const isProfesor = ref(localStorage.getItem('isProfesor') === 'true')
 const predajePredmet = ref(false)
 
+/* -------------------- helperi: v1 prefer + fallback -------------------- */
+async function getEither(v1, legacy){
+  try { return await api.get(v1) }
+  catch(e){ if (e?.response?.status === 404) return await api.get(legacy); throw e }
+}
+async function postEither(v1, legacy, body){
+  try { return await api.post(v1, body) }
+  catch(e){ if (e?.response?.status === 404) return await api.post(legacy, body); throw e }
+}
+async function patchEither(v1, legacy, body){
+  try { return await api.patch(v1, body) }
+  catch(e){ if (e?.response?.status === 404) return await api.patch(legacy, body); throw e }
+}
+async function putEither(v1, legacy, body){
+  try { return await api.put(v1, body) }
+  catch(e){ if (e?.response?.status === 404) return await api.put(legacy, body); throw e }
+}
+async function deleteEither(v1, legacy){
+  try { return await api.delete(v1) }
+  catch(e){ if (e?.response?.status === 404) return await api.delete(legacy); throw e }
+}
+/* ---------------------------------------------------------------------- */
 
 async function fetchMaterijali () {
   try {
     if (isProfesor.value) {
-      
-      const { data } = await api.get(`/materials?includeHidden=1`)
+      // profesor vidi i skrivene u svom predmetu
+      const { data } = await getEither(
+        `/api/v1/materials?includeHidden=1`,
+        `/materials?includeHidden=1`
+      )
       materijali.value = (Array.isArray(data) ? data : [])
         .filter(m => normalizeSubject(m.subject) === predmet.value)
     } else {
-     
+      // učenik: po predmetu + njegov razred
       if (!user?.razred) { materijali.value = []; return }
-      const url = `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}`
-      const { data } = await api.get(url)
+      const { data } = await getEither(
+        `/api/v1/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}`,
+        `/materials/subject/${encodeURIComponent(predmet.value)}/razred/${encodeURIComponent(user.razred)}`
+      )
       materijali.value = Array.isArray(data) ? data : []
     }
   } catch (err) {
@@ -165,11 +192,13 @@ async function fetchMaterijali () {
   }
 }
 
-
 async function checkDozvola () {
   try {
     if (!isProfesor.value || !user?.id) return
-    const { data } = await api.get(`/profesori/${user.id}`)
+    const { data } = await getEither(
+      `/api/v1/profesori/${user.id}`,
+      `/profesori/${user.id}`
+    )
     predajePredmet.value =
       Array.isArray(data?.Subjects) &&
       data.Subjects.some(s => normalizeSubject(s.naziv) === predmet.value)
@@ -179,11 +208,14 @@ async function checkDozvola () {
   }
 }
 
-
 async function toggleHide(m) {
   try {
     const next = !m.isHidden
-    await api.patch(`/materials/${m.id}/hide`, { isHidden: next })
+    await patchEither(
+      `/api/v1/materials/${m.id}/hide`,
+      `/materials/${m.id}/hide`,
+      { isHidden: next }
+    )
     m.isHidden = next
   } catch (err) {
     console.error('Greška pri sakrivanju/otkrivanju:', err)
@@ -194,7 +226,10 @@ async function toggleHide(m) {
 async function removeMaterial(m) {
   if (!confirm('Sigurno obrisati materijal?')) return
   try {
-    await api.delete(`/materials/${m.id}`)
+    await deleteEither(
+      `/api/v1/materials/${m.id}`,
+      `/materials/${m.id}`
+    )
     materijali.value = materijali.value.filter(x => x.id !== m.id)
   } catch (err) {
     console.error('Greška pri brisanju:', err)
@@ -205,7 +240,11 @@ async function removeMaterial(m) {
 async function downloadAndMarkRead(m) {
   try {
     if (user?.id) {
-      await api.post(`/api/v1/progress/${user.id}/read/${m.id}`)
+      await postEither(
+        `/api/v1/progress/${user.id}/read/${m.id}`,
+        `/api/v1/progress/${user.id}/read/${m.id}`, // legacy vjerojatno ne postoji; ostavljeno isto
+        {}
+      )
       window.dispatchEvent(new CustomEvent('progress-updated'))
     }
     window.open(m.fileUrl, '_blank')
@@ -217,7 +256,8 @@ async function downloadAndMarkRead(m) {
 function goToAddMaterial () {
   router.push({ name: 'AddMaterial', query: { predmet: encodeURIComponent(predmet.value) } })
 }
-  // ====== UREDI MATERIJAL (state) ======
+
+/* ====== UREDI MATERIJAL (state) ====== */
 const showEdit = ref(false)
 const editItem = ref(null)
 const editForm = ref({ naziv:'', opis:'', razred:'', imageUrl:'', file:null })
@@ -240,16 +280,15 @@ function onFile(e){
 
 async function saveEdit(){
   try{
-    
+    // (opcionalno) upload fajla – ostavljam legacy /upload
     let fileUrl = editItem.value.fileUrl || null
     if (editForm.value.file){
       const fd = new FormData()
       fd.append('file', editForm.value.file)
-      const up = await api.post('/upload', fd)
+      const up = await postEither('/api/v1/upload', '/upload', fd)
       fileUrl = up.data.fileUrl || fileUrl
     }
 
-   
     const payload = {
       naziv: editForm.value.naziv,
       opis: editForm.value.opis,
@@ -258,19 +297,19 @@ async function saveEdit(){
       razred: editForm.value.razred || editItem.value.razred,
     }
 
-    
-   const { data } = await api.put(`/materials/${editItem.value.id}`, payload)
+    const { data } = await putEither(
+      `/api/v1/materials/${editItem.value.id}`,
+      `/materials/${editItem.value.id}`,
+      payload
+    )
 
- 
     Object.assign(editItem.value, data)
-
     showEdit.value = false
-  }catch(err){
+  } catch(err){
     console.error(err)
     alert('Greška pri spremanju.')
   }
 }
-
 
 onMounted(() => {
   fetchMaterijali().catch(console.error)
@@ -283,6 +322,7 @@ watch(() => route.params.predmet, v => {
   checkDozvola().catch(console.error)
 })
 </script>
+
 
 
 
@@ -385,6 +425,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
