@@ -240,18 +240,20 @@ async function removeMaterial(m) {
 async function downloadAndMarkRead(m) {
   try {
     if (user?.id) {
-      await postEither(
-        `/api/v1/progress/${user.id}/read/${m.id}`,
-        `/api/v1/progress/${user.id}/read/${m.id}`, // legacy vjerojatno ne postoji; ostavljeno isto
-        {}
-      )
+      await api.post(`/api/v1/progress/${user.id}/read/${m.id}`)
       window.dispatchEvent(new CustomEvent('progress-updated'))
     }
-    window.open(m.fileUrl, '_blank')
+    const url = m.downloadUrl || m.fileUrl
+    if (!url) {
+      alert('Nema URL-a za preuzimanje.')
+      return
+    }
+    window.open(url, '_blank')  
   } catch (err) {
     console.error('Greška pri označavanju pročitanog materijala:', err)
   }
 }
+
 
 function goToAddMaterial () {
   router.push({ name: 'AddMaterial', query: { predmet: encodeURIComponent(predmet.value) } })
@@ -426,6 +428,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
