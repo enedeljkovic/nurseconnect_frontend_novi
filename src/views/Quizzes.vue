@@ -1,6 +1,6 @@
 <template>
   <div class="container my-5">
-    <!-- Natrag -->
+
     <div class="text-start mb-3">
       <router-link to="/home" class="btn btn-outline-primary">
         ⬅ Natrag na početnu stranicu
@@ -9,7 +9,7 @@
 
     <h2 class="text-center mb-5 text-primary">🧠 Kvizovi po predmetima</h2>
 
-    <!-- Odabir predmeta -->
+ 
     <div v-if="!selectedSubject" class="row g-4">
       <div v-for="predmet in predmeti" :key="predmet" class="col-12 col-md-6 col-lg-4">
         <div class="card predmet-card shadow h-100" @click="selectSubject(predmet)">
@@ -20,7 +20,7 @@
       </div>
     </div>
 
-    <!-- Lista kvizova -->
+ 
     <div v-else>
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h3 class="text-success">{{ selectedSubject }}</h3>
@@ -49,18 +49,18 @@
                 <p class="text-muted"><strong>Razred:</strong> {{ quiz.razred }}</p>
               </div>
 
-              <!-- Učenik -->
+              
               <button
                 v-if="!isProfesor"
                 class="btn btn-outline-success mt-3"
-                @click="goToQuiz(quiz.id)"
+                @click="openQuiz(quiz)"
               >
                 {{ solvedQuizzes[quiz.id] ? '👁 Pogledaj riješeni kviz' : '▶ Riješi kviz' }}
               </button>
 
-              <!-- Profesor -->
+            
               <div v-else class="d-flex gap-2 mt-3">
-                <button class="btn btn-outline-info" @click="goToQuiz(quiz.id)">
+                <button class="btn btn-outline-info" @click="openQuiz(quiz, 'preview')">
                   👁 Pregled pitanja
                 </button>
                 <button class="btn btn-outline-danger" @click="removeQuiz(quiz)" title="Obriši kviz">
@@ -78,7 +78,7 @@
 <script>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../lib/api.js' // ✅ umjesto axios/localhost
+import api from '../lib/api.js'
 
 export default {
   name: 'Quizzes',
@@ -119,7 +119,7 @@ export default {
       }
     }
 
-    // ✅ Provjera riješenosti s oba moguća endpointa (glavni + alias)
+    
     async function checkSolvedQuizzes(quizIds) {
       solvedQuizzes.value = {}
       if (!user?.id || isProfesor.value) return
@@ -129,11 +129,10 @@ export default {
           try {
             r = await api.get(`/quizzes/${id}/solved/${user.id}`)
           } catch {
-            r = await api.get(`/solved/${user.id}/${id}`) // alias fallback
+            r = await api.get(`/solved/${user.id}/${id}`)
           }
           solvedQuizzes.value[id] = !!r?.data?.solved
-        } catch (e) {
-          console.debug('Provjera riješenosti: nema rute ili 404 (ok):', id)
+        } catch {
           solvedQuizzes.value[id] = false
         }
       }
@@ -159,13 +158,23 @@ export default {
       router.push({ name: 'AddQuiz', query: { predmet } })
     }
 
-    function goToQuiz(id) {
-      router.push(`/quizzes/${id}`)
+   
+    function openQuiz(quiz, forceMode = null) {
+     
+      if (isProfesor.value || forceMode === 'preview') {
+        router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'preview' } })
+        return
+      }
+     
+      if (solvedQuizzes.value[quiz.id]) {
+        router.push({ path: `/quizzes/${quiz.id}`, query: { mode: 'review' } })
+      } else {
+        router.push({ path: `/quizzes/${quiz.id}` })
+      }
     }
 
     if (isProfesor.value) fetchProfesorPredmeti()
 
-    // ✅ bez undefined API_BASE, koristi shared api
     async function removeQuiz(quiz) {
       if (!isProfesor.value) return
       if (!confirm('Sigurno obrisati ovaj kviz?')) return
@@ -187,7 +196,7 @@ export default {
       mozeDodatiKviz,
       selectSubject,
       goToAddQuiz,
-      goToQuiz,
+      openQuiz,
       removeQuiz
     }
   }
