@@ -287,12 +287,12 @@ async function saveEdit(){
     let cloudinaryPublicId = editItem.value.cloudinaryPublicId || null   // ⬅️ NOVO
 
     if (editForm.value.file){
-      const fd = new FormData()
-      fd.append('file', editForm.value.file)
-      const up = await postEither('/api/v1/upload', '/upload', fd)
-      fileUrl = up.data.fileUrl || fileUrl
-      cloudinaryPublicId = up.data.publicId || cloudinaryPublicId        // ⬅️ NOVO
-    }
+  const fd = new FormData()
+  fd.append('file', editForm.value.file)
+  const up = await api.post('/upload', fd)
+  // ⬇️ koristimo downloadUrl ako postoji, jer on forsira ime+ekstenziju
+  fileUrl = (up.data.downloadUrl || up.data.fileUrl) || fileUrl
+}
 
     const payload = {
       naziv: editForm.value.naziv,
@@ -428,6 +428,7 @@ watch(() => route.params.predmet, v => {
   margin: 1rem 0 2rem;
 }
 </style>
+
 
 
 
