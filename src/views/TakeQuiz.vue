@@ -125,94 +125,61 @@
 
 
 <script>
-import { ref, onMounted, computed, watch } from 'vue';
+import axios from 'axios';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
-import api from '../lib/api.js'; 
 
 export default {
   name: 'TakeQuiz',
   setup() {
     const route = useRoute();
     const quizId = Number(route.params.id);
-
     const quiz = ref(null);
     const odgovori = ref([]);
     const rezultat = ref([]);
     const alreadySolved = ref(false);
-
     const isProfesor = ref(localStorage.getItem('isProfesor') === 'true');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
-
-    const startedAt = ref(Date.now());
-    const lastTick = ref(Date.now());
-    const lastIdx = ref(0);
-    const perQuestionMs = ref([]);
-
-    function initTimers(n) {
-      perQuestionMs.value = Array.from({ length: n }, () => 0);
-      startedAt.value = Date.now();
-      lastTick.value = Date.now();
-      lastIdx.value = 0;
-    }
-    function bump(idx) {
-      const now = Date.now();
-      const i = Math.max(0, Math.min(idx ?? lastIdx.value, (perQuestionMs.value.length - 1)));
-      perQuestionMs.value[i] = (perQuestionMs.value[i] || 0) + (now - lastTick.value);
-      lastIdx.value = i;
-      lastTick.value = now;
-    }
-
-    watch(
-      odgovori,
-      (nv, ov) => {
-        if (!Array.isArray(nv) || !Array.isArray(ov)) return;
-        let changed = lastIdx.value;
-        for (let i = 0; i < nv.length; i++) {
-          if (JSON.stringify(nv[i]) !== JSON.stringify(ov[i])) { changed = i; break; }
-        }
-        bump(changed);
-      },
-      { deep: true }
-    );
+    const hotspotRadius = 20;
 
     const fetchQuiz = async () => {
       try {
-        const q = await api.get(`/quizzes/${quizId}`);
+        const q = await axios.get(`http://localhost:3001/quizzes/${quizId}`);
         quiz.value = q.data;
 
-        odgovori.value = quiz.value.pitanja.map((p) => {
-          if (p.type === 'truefalse') return '';
-          if (p.type === 'hotspot') return null;
-          return [];
-        });
-
-        initTimers(quiz.value.pitanja.length);
-
-        if (!isProfesor.value && user?.id) {
-          try {
-            const solved = await api.get(`/quizzes/${quizId}/solved/${user.id}`);
-            if (solved.data?.alreadySolved || solved.data?.solved) {
-              alreadySolved.value = true;
-              rezultat.value = solved.data.rezultat || [];
-              if (Array.isArray(quiz.value.pitanja)) {
-                odgovori.value = quiz.value.pitanja.map(p => p.correct ?? null);
-              }
-            }
-          } catch {
-            try {
-              const solved2 = await api.get(`/solved/${user.id}/${quizId}`);
-              if (solved2.data?.alreadySolved || solved2.data?.solved) {
-                alreadySolved.value = true;
-                rezultat.value = solved2.data.rezultat || [];
-                if (Array.isArray(quiz.value.pitanja)) {
-                  odgovori.value = quiz.value.pitanja.map(p => p.correct ?? null);
-                }
-              }
-            } catch {}
+        if (!isProfesor.value) {
+          const solved = await axios.get(`http://localhost:3001/solved/${user.id}/${quizId}`);
+          if (solved.data.solved) {
+            alreadySolved.value = true;
+            rezultat.value = solved.data.rezultat;
+            odgovori.value = quiz.value.pitanja.map(p => p.correct);
+          } else {
+            odgovori.value = quiz.value.pitanja.map(p => {
+              if (p.type === 'truefalse') return '';
+              if (p.type === 'hotspot') return null;
+              return [];
+            });
           }
         }
       } catch (err) {
         console.error('Greška pri dohvaćanju kviza:', err);
+      }
+    };
+
+    const submitAnswers = async () => {
+      try {
+        const res = await axios.post(`http://localhost:3001/quizzes/${quizId}/check-answers`, {
+          odgovori: odgovori.value,
+          studentId: user.id
+        });
+        rezultat.value = res.data.rezultat;
+        alreadySolved.value = true;
+      } catch (err) {
+        if (err.response && err.response.status === 403) {
+          alert('❌ Dosegnut je maksimalan broj pokušaja.');
+        } else {
+          console.error('Greška pri slanju odgovora:', err);
+        }
       }
     };
 
@@ -221,48 +188,25 @@ export default {
       const i = odgovori.value[qi].indexOf(val);
       if (i >= 0) odgovori.value[qi].splice(i, 1);
       else odgovori.value[qi].push(val);
-      bump(qi);
     };
+
     const handleHotspotClick = (ev, qi) => {
       const rect = ev.currentTarget.getBoundingClientRect();
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
       odgovori.value[qi] = { x, y };
-      bump(qi);
     };
 
-    const submitAnswers = async () => {
-      try {
-        // dodaj zadnji interval
-        bump(lastIdx.value);
-        const totalSec = Math.round((Date.now() - startedAt.value) / 1000);
-
-        const res = await api.post(`/quizzes/${quizId}/check-answers`, {
-          odgovori: odgovori.value,
-          studentId: user.id,
-          durationSec: totalSec,
-          perQuestionMs: perQuestionMs.value
-        });
-
-        rezultat.value = res.data.rezultat || [];
-        alreadySolved.value = true;
-      } catch (err) {
-        if (err?.response?.status === 403) {
-          alert('❌ Dosegnut je maksimalan broj pokušaja.');
-        } else {
-          console.error('Greška pri slanju odgovora:', err);
-        }
-      }
-    };
-
-    const brojTocnih = computed(() => rezultat.value.filter(Boolean).length);
+    const brojTocnih = computed(() => rezultat.value.filter(r => r).length);
     const postotak = computed(() =>
-      rezultat.value.length ? Math.round((brojTocnih.value / rezultat.value.length) * 100) : 0
+      rezultat.value.length
+        ? Math.round((brojTocnih.value / rezultat.value.length) * 100)
+        : 0
     );
 
     const formatOdgovor = (odg) => {
       if (Array.isArray(odg)) return odg.join(', ');
-      if (odg && typeof odg === 'object' && odg.x != null && odg.y != null)
+      if (typeof odg === 'object' && odg?.x != null && odg?.y != null)
         return `(${Math.round(odg.x)}, ${Math.round(odg.y)})`;
       return odg;
     };
@@ -278,9 +222,10 @@ export default {
       postotak,
       submitAnswers,
       formatOdgovor,
-     
+      isProfesor,
       toggleImageChoice,
-      handleHotspotClick
+      handleHotspotClick,
+      hotspotRadius
     };
   }
 };
@@ -329,5 +274,3 @@ export default {
   box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 </style>
-
-
